@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c1320">
+<meta name="color-scheme" content="dark">
+<title>Swimshot · Swim House Mafia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,800;125,900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@400;700&family=Permanent+Marker&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0c1320; --panel:#142033; --panel2:#1c2a42; --line:#26364f; --text:#F3EBDD; --muted:#9aa2b3; --accent:#F3EBDD; --ink:#17243A;
+          --brand:"Archivo", Inter, system-ui, sans-serif;
+          --spring:cubic-bezier(.2,.9,.1,1); --safe-b:env(safe-area-inset-bottom, 0px); --safe-t:env(safe-area-inset-top, 0px); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html { color-scheme:dark; touch-action:manipulation; -webkit-text-size-adjust:100%; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:16px/1.4 Inter, system-ui, sans-serif; overscroll-behavior:none; }
+  button, input, select, textarea { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  [hidden] { display:none !important; }
+  svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+
+  .app { position:fixed; left:0; right:0; top:0; height:100%; max-width:520px; margin:0 auto; overflow:hidden; display:flex; flex-direction:column;
+         background:radial-gradient(130% 70% at 50% 0%, #1d2c47 0%, var(--bg) 62%); }
+
+  /* stage: the card, always visible */
+  .stage { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
+  .top { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:calc(10px + var(--safe-t)) 14px 4px; z-index:2; }
+  /* editor open: it takes the whole screen; the card shrinks to a live thumbnail in the header */
+  .app.editing .stage { display:none; }
+  .app.editing .sheet { flex:1; min-height:0; display:flex; flex-direction:column; border-radius:0; border-top:0; padding-top:var(--safe-t); }
+  .app.editing .grab { display:none; }
+  .app.editing .head { padding-top:12px; }
+  #thumb { display:none; height:58px; aspect-ratio:var(--rw) / var(--rh); border-radius:6px; object-fit:cover; background:var(--panel2);
+           box-shadow:0 4px 14px rgba(0,0,0,.4); cursor:pointer; flex:none; }
+  .app.editing #thumb { display:block; }
+  /* typing sets: tuck title + date/time away so the workout gets the space above the keyboard */
+  .app.typing .title, .app.typing .meta { display:none; }
+  .round { width:44px; height:44px; display:grid; place-items:center; border-radius:50%; border:0; background:rgba(255,255,255,.08);
+           backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); transition:transform .15s var(--spring), background .2s; }
+  .round:active { transform:scale(.9); background:rgba(255,255,255,.16); }
+  .round.on { background:var(--accent); color:var(--ink); }
+  .look { text-align:center; min-width:0; }
+  .logo { display:block; height:30px; margin:4px auto 0; }
+  .toast { position:absolute; left:50%; top:76px; transform:translate(-50%, -6px); opacity:0; pointer-events:none; z-index:2;
+           padding:8px 16px; border-radius:999px; background:rgba(12,19,32,.82); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+           font:900 15px/1 var(--brand); font-stretch:125%; letter-spacing:.02em; text-transform:uppercase; transition:opacity .25s, transform .3s var(--spring); }
+  .toast.show { opacity:1; transform:translate(-50%, 0); }
+  .dots { display:flex; justify-content:center; gap:5px; margin-top:6px; }
+  .dots i { width:5px; height:5px; border-radius:3px; background:#2c3a4a; transition:all .3s var(--spring); }
+  .dots i.on { width:16px; background:var(--accent); }
+  .carousel { flex:1; min-height:0; display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; }
+  .carousel::-webkit-scrollbar, .ins::-webkit-scrollbar, .meta::-webkit-scrollbar { display:none; }
+  .slide { flex:0 0 100%; scroll-snap-align:center; scroll-snap-stop:always; display:grid; place-items:center; padding:8px 22px 14px; min-height:0; }
+  .slide > div { width:100%; height:100%; container-type:size; display:grid; place-items:center; }
+  /* fixed box from the card's aspect ratio: images loading in never shift the layout */
+  .slide img { width:min(100cqw, 100cqh * var(--rw) / var(--rh)); aspect-ratio:var(--rw) / var(--rh); height:auto; display:block;
+               border-radius:14px; box-shadow:0 20px 50px rgba(0,0,0,.6); cursor:pointer;
+               background:linear-gradient(100deg, #121b26 30%, #1b2735 50%, #121b26 70%) 0 0/300% 100%; animation:shimmer 1.2s linear infinite; }
+  .slide img.ready { animation:fadein .25s ease; background:repeating-conic-gradient(#1a2430 0 25%, #121a23 0 50%) 0 0/20px 20px; }
+  @keyframes fadein { from { opacity:0; } }
+  @keyframes shimmer { to { background-position:-150% 0; } }
+  .hint { position:absolute; left:0; right:0; bottom:22px; text-align:center; pointer-events:none; transition:opacity .4s; }
+  .hint span { background:rgba(0,0,0,.55); padding:7px 14px; border-radius:999px; font-size:13px; font-weight:600; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+
+  /* bottom sheet: summary + share when closed, the editor when open */
+  .sheet { flex:none; background:rgba(20,32,51,.97); border-top:1px solid var(--line); border-radius:22px 22px 0 0;
+           box-shadow:0 -12px 40px rgba(0,0,0,.45); padding-bottom:var(--safe-b); z-index:3; }
+  .grab { display:block; width:100%; height:22px; border:0; background:none; padding:0; touch-action:none; }
+  .grab::before { content:""; display:block; width:38px; height:5px; border-radius:3px; background:#34455a; margin:9px auto 0; }
+  .head { display:flex; align-items:center; gap:12px; padding:0 14px 12px; }
+  .sum { flex:1; min-width:0; text-align:left; border:0; background:none; padding:0; }
+  .sum b { display:block; font:900 21px/1.15 var(--brand); font-stretch:125%; letter-spacing:-.01em; }
+  .sum span { display:block; font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .btn { height:48px; padding:0 18px; border-radius:14px; border:0; font-weight:800; font-size:16px; display:inline-flex; align-items:center; gap:8px;
+         transition:transform .15s var(--spring); }
+  .btn:active { transform:scale(.95); }
+  .btn.primary { background:var(--accent); color:var(--ink); }
+  .btn.quiet { background:var(--panel2); color:var(--text); }
+  .body { display:none; }
+  .sheet.open .body { display:flex; flex:1; min-height:0; animation:rise .3s var(--spring); }
+  @keyframes rise { from { opacity:0; transform:translateY(24px); } }
+  .body > div { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .editing { flex:1; min-height:0; display:flex; flex-direction:column; border-top:1px solid var(--line); }
+  .title { background:none; border:0; padding:12px 16px 4px; font:800 22px/1.2 var(--brand); font-stretch:125%; outline:none; }
+  .meta { display:flex; gap:8px; padding:6px 16px 4px; overflow-x:auto; scrollbar-width:none; }
+  .pill { flex:none; display:flex; align-items:center; gap:6px; height:36px; padding:0 12px; border-radius:999px; background:var(--panel2); color:var(--muted); font-size:14px; }
+  .pill input, .pill select { background:none; border:0; color:var(--text); font-size:16px; padding:0; min-width:0; outline:none; }
+  .pill input[name=time] { width:4.6em; }
+  .pill input[type=date] { width:auto; max-width:7.6em; font-size:16px; }
+  .pill select { appearance:none; }
+  .pill.icon { padding:0 10px; color:var(--text); border:0; }
+  textarea[name=sets] { flex:1; min-height:60px; resize:none; border:0; background:none; padding:8px 16px; outline:none;
+         font:16px/1.6 "JetBrains Mono", ui-monospace, Menlo, monospace; color:var(--text); }
+  textarea::placeholder { color:#4b5b6d; }
+  .ins { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding:8px 12px; border-top:1px solid var(--line); }
+  .ins button { flex:none; height:36px; min-width:40px; padding:0 12px; border-radius:10px; border:0; background:var(--panel2); font-size:15px; }
+  .ins button.k { font-family:"JetBrains Mono", monospace; font-weight:700; color:var(--accent); }
+  .ins button:active { transform:scale(.93); }
+
+  /* title screen */
+  .home { position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center; text-align:center;
+          padding:calc(20px + var(--safe-t)) 24px calc(20px + var(--safe-b));
+          background:radial-gradient(120% 60% at 50% 30%, #24365a 0%, var(--bg) 70%); transition:opacity .35s, transform .45s var(--spring); }
+  .home.gone { opacity:0; transform:scale(1.04); pointer-events:none; }
+  .fan { flex:1; min-height:0; width:100%; position:relative; }
+  .fan img { position:absolute; left:50%; top:50%; height:min(88%, 400px); aspect-ratio:9/16; border-radius:12px; background:var(--panel2);
+             box-shadow:0 24px 50px rgba(0,0,0,.55); animation:deal .7s var(--spring) both; }
+  .fan img:nth-child(1) { transform:translate(-104%, -47%) rotate(-9deg); animation-delay:.08s; }
+  .fan img:nth-child(2) { transform:translate(4%, -47%) rotate(9deg); animation-delay:.16s; }
+  .fan img:nth-child(3) { transform:translate(-50%, -52%); z-index:1; }
+  @keyframes deal { from { opacity:0; translate:0 40px; } }
+  .wordmark { font:900 46px/1 var(--brand); font-stretch:125%; letter-spacing:-.01em; margin:18px 0 8px; animation:fadeup .6s .2s var(--spring) both; }
+  .by { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--muted); font-size:14px; font-weight:600; animation:fadeup .6s .28s var(--spring) both; }
+  .by img { height:30px; }
+  .tag { color:var(--muted); margin:14px 0 22px; font-size:16px; animation:fadeup .6s .34s var(--spring) both; }
+  .home .btn { width:100%; justify-content:center; height:54px; font-size:17px; animation:fadeup .6s .4s var(--spring) both; }
+  .home .btn + .btn { margin-top:10px; }
+  @keyframes fadeup { from { opacity:0; transform:translateY(14px); } }
+  .wm { border:0; background:none; padding:4px 6px; font:900 17px/1 var(--brand); font-stretch:125%; letter-spacing:.01em; color:var(--text); }
+
+  /* adjust photo */
+  .adjust { position:absolute; inset:0; z-index:15; background:#05080d; display:flex; flex-direction:column; gap:12px;
+            padding:calc(14px + var(--safe-t)) 16px calc(14px + var(--safe-b)); animation:fadein .2s ease; }
+  .adj-top { text-align:center; display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .adj-top .seg { width:min(100%, 260px); }
+  #adjHint { font-size:13px; color:var(--muted); }
+  .adj-stage { flex:1; min-height:0; container-type:size; display:grid; place-items:center; }
+  #adjCv { width:min(100cqw, 100cqh * var(--rw) / var(--rh)); aspect-ratio:var(--rw) / var(--rh); border-radius:12px; touch-action:none; cursor:grab;
+           box-shadow:0 0 0 1px rgba(255,255,255,.12); }
+  #adjCv:active { cursor:grabbing; }
+  .adj-zoom { display:flex; align-items:center; gap:10px; color:var(--muted); padding:0 6px; }
+  .adj-actions { display:flex; gap:8px; }
+  .adj-actions .btn { flex:1; justify-content:center; padding:0 10px; }
+
+  /* full-screen card viewer: press-and-hold saves to Photos (works without https) */
+  .viewer { position:absolute; inset:0; z-index:20; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center;
+            gap:14px; padding:calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b)); animation:fadein .2s ease; }
+  .viewer img { max-width:100%; max-height:calc(100% - 90px); border-radius:10px; animation:pop .32s var(--spring);
+                -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto; }
+  @keyframes pop { from { transform:scale(.94); opacity:.4; } }
+  .viewer p { margin:0; color:#cfd3da; font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .viewer .x { position:absolute; top:calc(12px + var(--safe-t)); right:12px; }
+  .viewer .dl { background:none; border:0; color:var(--muted); font-size:13px; text-decoration:underline; padding:4px; }
+  @media (hover:none) { .viewer .dl { display:none; } }
+
+  /* style + help sheets */
+  dialog { width:100%; max-width:520px; margin:auto auto 0; padding:8px 18px calc(20px + var(--safe-b)); border:0; border-radius:22px 22px 0 0;
+           background:var(--panel); color:var(--text); max-height:85vh; overflow:auto; }
+  dialog:focus { outline:none; }
+  dialog::backdrop { background:rgba(0,0,0,.5); }
+  dialog[open] { animation:up .32s var(--spring); }
+  @keyframes up { from { transform:translateY(60px); opacity:0; } }
+  dialog .grip { width:38px; height:5px; border-radius:3px; background:#34455a; margin:4px auto 14px; }
+  dialog h2 { font:900 18px/1.2 var(--brand); font-stretch:125%; margin:0 0 14px; }
+  .field { margin-bottom:18px; }
+  .field > span, .lbl { display:block; font-size:13px; color:var(--muted); margin-bottom:8px; font-weight:600; }
+  .seg { display:flex; background:var(--bg); border-radius:12px; padding:3px; }
+  .seg label { flex:1; position:relative; }
+  .seg input, .swatches input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+  .seg span { display:block; text-align:center; padding:9px 4px; border-radius:9px; font-size:15px; font-weight:600; color:var(--muted); }
+  .seg input:disabled + span { opacity:.35; }
+  .seg input:checked + span { background:var(--panel2); color:var(--text); box-shadow:0 1px 4px rgba(0,0,0,.4); }
+  .seg input:focus-visible + span, .swatches input:focus-visible + span { outline:2px solid var(--accent); }
+  .swatches { display:flex; gap:12px; flex-wrap:wrap; }
+  .swatches label { position:relative; }
+  .swatches span { display:block; width:36px; height:36px; border-radius:50%; border:3px solid transparent; }
+  .swatches input:checked + span { border-color:#fff; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .toggle { display:flex; align-items:center; justify-content:space-between; font-weight:600; }
+  .toggle input { width:22px; height:22px; accent-color:var(--accent); }
+  .wide { width:100%; justify-content:center; margin-top:6px; }
+  .help table { border-collapse:collapse; width:100%; font-size:14px; color:var(--muted); }
+  .help td { padding:10px 10px 10px 0; vertical-align:top; border-top:1px solid var(--line); }
+  .help td:first-child { white-space:nowrap; }
+  .help code { color:var(--accent); font-family:"JetBrains Mono", monospace; font-size:13.5px; }
+  .help p { color:var(--muted); font-size:14px; }
+  .linkish { background:none; border:0; color:var(--accent); font-weight:700; padding:8px 0; font-size:15px; }
+  @media (prefers-reduced-motion:reduce) { *, *::before { transition:none !important; animation:none !important; } }
+</style>
+</head>
+<body>
+<form id="f" onsubmit="return false">
+<div class="app" id="app">
+  <section class="stage" aria-label="Your card">
+    <div class="top">
+      <button type="button" class="round" id="photoBtn" aria-label="Add a photo" title="Photo">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m21 15-4.5-4.5L8 19"/></svg>
+      </button>
+      <input name="photo" type="file" accept="image/*" hidden>
+      <div class="look"><button type="button" class="wm" id="homeLogo" aria-label="Swimshot. Back to the title screen.">SWIMSHOT</button><div class="dots" id="dots" aria-hidden="true"></div></div>
+      <button type="button" class="round" id="styleBtn" aria-label="Style" title="Style">
+        <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
+    </div>
+    <div class="carousel" id="carousel" tabindex="0" aria-label="Looks. Swipe or use arrow keys."></div>
+    <div class="hint" id="hint" hidden><span>Swipe for more looks</span></div>
+    <div class="toast" id="slideName" aria-live="polite"></div>
+  </section>
+
+  <section class="sheet" id="sheet" aria-label="Workout">
+    <button type="button" class="grab" id="grab" aria-label="Show or hide the workout editor"></button>
+    <div class="head">
+      <img id="thumb" alt="Card preview. Tap to go back to it.">
+      <button type="button" class="sum" id="sum" aria-label="Edit workout"><b id="sumTotal"></b><span id="sumMeta"></span></button>
+      <button type="button" class="btn quiet" id="done" hidden>Done</button>
+      <button type="button" class="btn primary" id="save">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg><span>Share</span>
+      </button>
+    </div>
+    <div class="body"><div>
+      <div class="editing">
+        <input class="title" name="heading" aria-label="Title" autocomplete="off" enterkeyhint="next">
+        <div class="meta">
+          <label class="pill"><input name="date" type="date" aria-label="Date"></label>
+          <label class="pill">Time <input name="time" placeholder="48:30" inputmode="numeric" autocomplete="off" aria-label="Time, like 48:30 or 4830"></label>
+          <label class="pill"><select name="unit" aria-label="Units"><option value="yd">yards</option><option value="m">meters</option></select></label>
+          <button type="button" class="pill icon" id="helpBtn" aria-label="How to write a workout">?</button>
+        </div>
+        <textarea name="sets" aria-label="Workout, one set per line" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off"
+          placeholder="Warmup&#10;400 swim&#10;Main&#10;8x100 free @1:30&#10;Cooldown&#10;200 easy"></textarea>
+        <div class="ins" aria-label="Insert"><button type="button" data-ins="x" class=k aria-label="Insert x">×</button><button type="button" data-ins="@" class=k aria-label="Insert @">@</button><button type="button" data-ins="-" class=k aria-label="Insert -">–</button><button type="button" data-ins="free" aria-label="Insert free">free</button><button type="button" data-ins="back" aria-label="Insert back">back</button><button type="button" data-ins="breast" aria-label="Insert breast">breast</button><button type="button" data-ins="fly" aria-label="Insert fly">fly</button><button type="button" data-ins="IM" aria-label="Insert IM">IM</button><button type="button" data-ins="kick" aria-label="Insert kick">kick</button><button type="button" data-ins="pull" aria-label="Insert pull">pull</button><button type="button" data-ins="drill" aria-label="Insert drill">drill</button><button type="button" data-ins="easy" aria-label="Insert easy">easy</button><button type="button" data-ins="Warmup" aria-label="Insert Warmup">Warmup</button><button type="button" data-ins="Main" aria-label="Insert Main">Main</button><button type="button" data-ins="Cooldown" aria-label="Insert Cooldown">Cooldown</button></div>
+      </div>
+    </div></div>
+  </section>
+
+  <section class="home" id="home" aria-label="Swimshot">
+    <div class="fan" aria-hidden="true"><img alt=""><img alt=""><img alt=""></div>
+    <div class="wordmark">SWIMSHOT</div>
+    <div class="by">by <img src="brand/shm.svg" alt="Swim House Mafia"></div>
+    <p class="tag">Write the set. Post the swim.</p>
+    <button type="button" class="btn primary" id="newBtn">New workout</button>
+    <button type="button" class="btn quiet" id="continueBtn" hidden></button>
+  </section>
+
+  <div class="adjust" id="adjust" role="dialog" aria-modal="true" aria-label="Adjust photo" hidden>
+    <div class="adj-top">
+      <div class="seg" role="group" aria-label="What to adjust">
+        <label><input type="radio" name="adjWhat" value="photo"><span>Photo</span></label>
+        <label><input type="radio" name="adjWhat" value="text" checked><span>Text</span></label>
+      </div>
+      <span id="adjHint">Drag to move · pinch to resize</span>
+    </div>
+    <div class="adj-stage"><canvas id="adjCv" aria-label="Photo framing. Drag to move, pinch or scroll to zoom."></canvas></div>
+    <label class="adj-zoom"><svg viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6"/></svg>
+      <input type="range" id="zoom" min="100" max="400" value="100" aria-label="Zoom">
+      <svg viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6M11 8v6"/></svg></label>
+    <div class="adj-actions">
+      <button type="button" class="btn quiet" id="adjReset">Reset</button>
+      <button type="button" class="btn quiet" id="adjReplace">Photo…</button>
+      <button type="button" class="btn primary" id="adjDone">Done</button>
+    </div>
+  </div>
+
+  <div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Your card" hidden>
+    <button type="button" class="round x" id="viewClose" aria-label="Close">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <img id="viewImg" alt="Your swim card">
+    <p><svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>Press and hold the card → Save to Photos</p>
+    <button type="button" class="dl" id="viewDl">Download file</button>
+  </div>
+</div>
+
+<dialog id="styleSheet" aria-label="Style" tabindex="-1">
+  <div class="grip"></div>
+  <h2>Style</h2>
+  <div class="field"><span>Size</span>
+    <div class="seg">
+      <label><input type="radio" name="size" value="story" checked><span>Story</span></label>
+      <label><input type="radio" name="size" value="post"><span>Post</span></label>
+      <label><input type="radio" name="size" value="square"><span>Square</span></label>
+    </div>
+  </div>
+  <div class="field"><span>Accent</span><div class="swatches"><label><input type="radio" name="accent" value="#F3EBDD" checked aria-label="Cream"><span style="background:#F3EBDD"></span></label><label><input type="radio" name="accent" value="#5ad1ff" aria-label="Pool blue"><span style="background:#5ad1ff"></span></label><label><input type="radio" name="accent" value="#ffffff" aria-label="White"><span style="background:#ffffff"></span></label><label><input type="radio" name="accent" value="#4ee0a0" aria-label="Green"><span style="background:#4ee0a0"></span></label><label><input type="radio" name="accent" value="#ffd166" aria-label="Yellow"><span style="background:#ffd166"></span></label><label><input type="radio" name="accent" value="#ff7ab6" aria-label="Pink"><span style="background:#ff7ab6"></span></label><label><input type="radio" name="accent" value="#ff7a45" aria-label="Orange"><span style="background:#ff7a45"></span></label></div></div>
+  <div class="field"><button type="button" class="linkish" id="adjustFromStyle">Move &amp; resize text and photo</button>
+    <button type="button" class="linkish" id="removePhoto" style="margin-left:16px">Remove photo</button></div>
+  <div class="field"><label><span class="lbl">Darkness behind text</span><input name="dim" type="range" min="0" max="100" value="80"></label></div>
+  <div class="field"><label class="toggle">Transparent sticker <input type="checkbox" name="sticker"></label>
+    <span class="lbl" style="margin:6px 0 0;font-weight:400">No background or photo, for laying the card over your own story.</span></div>
+  <button type="button" class="btn primary wide" data-close>Done</button>
+</dialog>
+
+<dialog id="helpSheet" class="help" aria-label="How to write a workout" tabindex="-1">
+  <div class="grip"></div>
+  <h2>Swimshot <span style="color:var(--muted);font-weight:800">by</span> Swim House Mafia</h2>
+  <p style="margin-top:-6px">Write your sets, swipe for a look, share it.</p>
+  <table>
+    <tr><td><code>400 swim</code></td><td>One set: distance, then anything you want to say about it</td></tr>
+    <tr><td><code>8x100 free @1:30</code></td><td>Repeats. Counts as 800</td></tr>
+    <tr><td><code>Warmup</code></td><td>No distance = section heading</td></tr>
+    <tr><td><code>3x</code><br><code>- 100 free</code><br><code>- 2x50 fly</code></td><td>A round, done 3 times. Start its sets with <code>-</code>. A blank line or the next line without <code>-</code> ends it</td></tr>
+  </table>
+  <p>Time: <code>48:30</code> or just <code>4830</code>. The buttons above the keyboard type <code>x</code>, <code>@</code> and <code>-</code> for you.</p>
+  <button type="button" class="linkish" id="example">Use an example workout</button>
+  <button type="button" class="btn primary wide" data-close>Got it</button>
+</dialog>
+</form>
+
+<canvas id="c" hidden></canvas>
+
+<script type="module">
+import { parseSets, parseTime, fmtTime, pacePer100, fmtNum } from "./sets.mjs";
+
+const f = document.getElementById("f"), cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const $ = id => document.getElementById(id);
+const SIZES = { story: [1080, 1920], post: [1080, 1350], square: [1080, 1080] };
+const M_TO_YD = 1.0936133;
+const STROKE_COLORS = { freestyle: "#5ad1ff", backstroke: "#7c8cff", butterfly: "#ff7ab6", breaststroke: "#4ee0a0", drill: "#ffd166", openwater: "#f4a261" };
+let photo = null, form = null; // form = {me, stats} from /api/form (only when served by form.py with a login)
+const cur = { layout: "full", period: "year" }; // what the card functions draw
+
+// ---- drawing helpers ----
+function font(size, weight = 800) { ctx.font = `${weight} ${size}px Inter, system-ui, sans-serif`; if ("fontStretch" in ctx) ctx.fontStretch = "normal"; }
+function txt(s, x, y, size, { weight = 800, color = "#fff", align = "left", spacing = 0 } = {}) {
+  font(size, weight);
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.letterSpacing = `${spacing}px`;
+  ctx.fillText(s, x, y);
+  ctx.letterSpacing = "0px";
+}
+// Brand type: Archivo, extra-wide when the browser supports canvas fontStretch (else normal width).
+const BRAND = '"Archivo", Inter, system-ui, sans-serif';
+function bfont(size, weight = 900) { ctx.font = `${weight} ${size}px ${BRAND}`; if ("fontStretch" in ctx) ctx.fontStretch = "expanded"; }
+function btxt(s, x, y, size, { weight = 900, color = "#fff", align = "left" } = {}) {
+  bfont(size, weight); ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(s, x, y);
+  if ("fontStretch" in ctx) ctx.fontStretch = "normal";
+}
+
+// Swim House Mafia logo, drawn from the brand SVG's outlined letters so each half can be recolored:
+// SWIM HOUSE readable, MAFIA tonal (barely there), like the embroidery.
+let LOGO = null;
+const logoReady = fetch("brand/shm.svg").then(r => r.text()).then(t => {
+  const top = new Path2D(), bottom = new Path2D();
+  [...new DOMParser().parseFromString(t, "image/svg+xml").querySelectorAll("path")].forEach((p, i) => {
+    const [tx, ty, sx, sy] = p.getAttribute("transform").match(/[-\d.]+/g).map(Number);
+    (i < 9 ? top : bottom).addPath(new Path2D(p.getAttribute("d")), new DOMMatrix([sx, 0, 0, sy, tx, ty]));
+  });
+  LOGO = { top, bottom };
+}).catch(() => {});
+// Product wordmark for card footers: SWIMSHOT, with the parent brand underneath.
+function wordmark(x, y, align = "left") {
+  btxt("SWIMSHOT", x, y - 16, 30, { color: "rgba(243,235,221,.9)", align });
+  txt("BY SWIM HOUSE MAFIA", x, y + 14, 17, { weight: 600, color: "rgba(243,235,221,.5)", align, spacing: 3 });
+}
+// Draws the logo `w` wide with its top-left (or top-center) at x,y. Letters span x 100-1100, y 176-462 in the SVG.
+function logo(x, y, w, { color = "#F3EBDD", tonal = "rgba(255,255,255,.13)", align = "left" } = {}) {
+  if (!LOGO) return;
+  const s = w / 1000;
+  ctx.save(); ctx.translate(align === "center" ? x - w / 2 : x, y); ctx.scale(s, s); ctx.translate(-100, -176);
+  ctx.fillStyle = tonal; ctx.fill(LOGO.bottom); ctx.fillStyle = color; ctx.fill(LOGO.top);
+  ctx.restore();
+}
+
+function clip(s, maxW) { // ellipsize to width using current font
+  if (ctx.measureText(s).width <= maxW) return s;
+  while (s && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+const label = (s, x, y, align) => txt(s.toUpperCase(), x, y, 28, { weight: 600, color: "rgba(255,255,255,.75)", align, spacing: 3 });
+
+// Photo framing: zoom >= 1 over "cover", and the photo point (fx, fy in 0..1) that sits at the card's center.
+const frame = { zoom: 1, fx: 0.5, fy: 0.5 };
+function photoRect(W, H) {
+  const s = Math.max(W / photo.width, H / photo.height) * frame.zoom, w = photo.width * s, h = photo.height * s;
+  const clamp = (v, lo) => Math.min(0, Math.max(lo, v)); // photo always covers the card
+  return { x: clamp(W / 2 - frame.fx * w, W - w), y: clamp(H / 2 - frame.fy * h, H - h), w, h };
+}
+function background(W, H, sticker, c = ctx) {
+  c.clearRect(0, 0, W, H);
+  if (sticker) return;
+  if (photo) {
+    const r = photoRect(W, H);
+    c.drawImage(photo, r.x, r.y, r.w, r.h);
+  } else {
+    const g = c.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, "#2b3b5a"); g.addColorStop(1, "#0b1220");
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.strokeStyle = "rgba(255,255,255,.05)"; c.lineWidth = 6; // lane lines
+    for (let x = W / 6; x < W; x += W / 6) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); }
+  }
+  const bottom = c.createLinearGradient(0, H * 0.3, 0, H);
+  const k = f.dim.value / 100;
+  bottom.addColorStop(0, "rgba(0,0,0,0)"); bottom.addColorStop(1, `rgba(0,0,0,${k})`);
+  c.fillStyle = bottom; c.fillRect(0, 0, W, H);
+  const top = c.createLinearGradient(0, 0, 0, 360);
+  top.addColorStop(0, `rgba(0,0,0,${k * 0.55})`); top.addColorStop(1, "rgba(0,0,0,0)");
+  c.fillStyle = top; c.fillRect(0, 0, W, 360);
+}
+
+// Big number + unit, baseline at y. Returns nothing; caller reserves ~bigSize of height.
+function bigDistance(n, unit, x, y, size, accent, maxW, center = false) {
+  bfont(size); // shrink to fit: number + gap + unit (~0.36 size) within maxW
+  const fit = ctx.measureText(fmtNum(n)).width + size * 0.15 + ctx.measureText(unit).width * 0.36;
+  if (fit > maxW) size = Math.floor(size * maxW / fit);
+  bfont(size); const w = ctx.measureText(fmtNum(n)).width;
+  bfont(size * 0.36); const uw = ctx.measureText(unit).width;
+  if (center) x -= (w + 16 + uw) / 2;
+  btxt(fmtNum(n), x, y, size);
+  btxt(unit, x + w + 16, y, size * 0.36, { color: accent });
+}
+
+// Row of {label, value} columns spread across width, values baseline at y.
+function statRow(items, x, y, width) {
+  const col = width / items.length;
+  items.forEach((it, i) => { label(it.label, x + i * col, y - 72); txt(it.value, x + i * col, y, 64); });
+}
+
+function footer(W, H, M, right) {
+  wordmark(M, H - M);
+  if (right) txt(right, W - M, H - M, 26, { weight: 600, color: "rgba(255,255,255,.6)", align: "right" });
+}
+
+// ---- cards ----
+function drawWorkout(W, H, accent, unit) {
+  const M = 80, { rows, total } = parseSets(f.sets.value), secs = parseTime(f.time.value);
+  const date = f.date.value ? new Date(f.date.value + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }) : "";
+  const w = { rows, total, secs, date };
+  if (cur.layout === "poster") return drawPoster(W, H, accent, unit, w);
+  if (cur.layout === "receipt") return drawReceipt(W, H, accent, unit, w);
+  if (cur.layout === "whiteboard") return drawWhiteboard(W, H, unit, w);
+  if (cur.layout === "scoreboard") return drawScoreboard(W, H, unit, w);
+  if (cur.layout === "facts") return drawFacts(W, H, unit, w);
+  bfont(56); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 56);
+  txt(date, M, M + 120, 34, { weight: 600, color: "rgba(255,255,255,.8)" });
+
+  footer(W, H, M);
+  let y = H - M - 90;
+  const stats = [secs && { label: "Time", value: fmtTime(secs) }, secs && total && { label: `Pace /100${unit}`, value: pacePer100(secs, total) }].filter(Boolean);
+  if (stats.length) { statRow(stats, M, y, W - 2 * M); y -= 150; }
+  const big = cur.layout === "minimal" ? 260 : H < 1500 ? 160 : 210;
+  bigDistance(total, unit, M, y, big, accent, W - 2 * M);
+  const top = M + 170, bottom = y - big - 40;
+  if (cur.layout === "bars") return drawBars(rows, M, top, W - 2 * M, bottom, accent);
+  if (cur.layout !== "full" || !rows.length) return;
+
+  drawList(rows, M, top, W - 2 * M, bottom, accent);
+}
+
+// Rows -> display lines; group items are indented under their "3×" line.
+function listLines(rows) {
+  const out = [];
+  for (const r of rows) {
+    if (r.heading) out.push({ h: r.heading });
+    else if (r.group) {
+      out.push({ left: `${r.reps}×`, text: r.label || `${fmtNum(r.dist)} per round`, bold: true });
+      for (const it of r.items) out.push(it.heading ? { h: it.heading, indent: true } : { left: setStr(it), text: it.label, indent: true });
+    } else out.push({ left: setStr(r), text: r.label });
+  }
+  return out;
+}
+
+const sticky = (ls, k) => ls[k]?.indent || ls[k - 1]?.h || ls[k - 1]?.bold;
+// Index to break 2 columns at, nearest the middle, without splitting a group or orphaning a heading; -1 if none fits.
+function splitAt(ls, per) {
+  const mid = Math.ceil(ls.length / 2);
+  for (let d = 0; d < mid; d++) for (const k of [mid - d, mid + d])
+    if (k > 0 && k < ls.length && !sticky(ls, k) && k <= per && ls.length - k <= per) return k;
+  return -1;
+}
+
+// Set list in [top, bottom]: one column, then two, shrinking font; truncate as a last resort.
+function drawList(rows, x, top, width, bottom, accent) {
+  const lines = listLines(rows);
+  if (!lines.length) return;
+  let cols, size, lh, per;
+  fit: for (cols of [1, 2]) for (size = cols === 1 ? 46 : 38; size >= (cols === 1 ? 30 : 24); size -= 2) {
+    lh = size * 1.4; per = Math.floor((bottom - top) / lh);
+    if (cols === 1 ? per >= lines.length : splitAt(lines, per) >= 0) break fit;
+  }
+  size = Math.max(size, 24); lh = size * 1.4; per = Math.floor((bottom - top) / lh);
+  const colW = cols === 1 ? width : (width - 48) / 2;
+  let columns = [lines], k = cols === 2 ? splitAt(lines, per) : -1;
+  if (cols === 2 && k >= 0) columns = [lines.slice(0, k), lines.slice(k)];
+  else if (cols === 2) { // too long even at min size: break cleanly, fill column 2, then "+N more"
+    for (k = per; k > 1 && sticky(lines, k); k--);
+    const c2 = lines.slice(k, k + per - 1);
+    while (c2.length && (c2.at(-1).h || c2.at(-1).bold)) c2.pop(); // don't end on a heading
+    const extra = lines.length - k - c2.length;
+    columns = [lines.slice(0, k), extra ? [...c2, { more: `+${extra} more` }] : c2];
+  }
+  const n = Math.max(...columns.map(c => c.length)); // rows tall, for bottom alignment
+  const IND = size * 0.9;
+  for (let c = 0; c < cols; c++) {
+    const col = columns[c], cx = x + c * (colW + 48);
+    font(size); const leftW = Math.max(0, ...col.filter(l => l.left).map(l => ctx.measureText(l.left).width + (l.indent ? IND : 0))) + size * 0.6;
+    let ly = bottom - n * lh + size;
+    for (const l of col) {
+      const ix = cx + (l.indent ? IND : 0);
+      if (l.indent) { ctx.fillStyle = accent; ctx.globalAlpha = 0.6; ctx.fillRect(cx + 4, ly - size * 1.05, 5, lh); ctx.globalAlpha = 1; }
+      if (l.more) txt(l.more, cx, ly, size * 0.8, { weight: 600, color: "rgba(255,255,255,.7)" });
+      else if (l.h) txt(l.h.toUpperCase(), ix, ly, size * 0.62, { color: accent, spacing: 4 });
+      else {
+        txt(l.left, ix, ly, size, { color: accent });
+        const w = l.bold ? 800 : 400; font(size, w);
+        txt(clip(l.text, colW - leftW), cx + leftW, ly, size, { weight: w });
+      }
+      ly += lh;
+    }
+  }
+}
+const setStr = r => (r.reps > 1 ? `${r.reps}×${r.dist}` : String(r.dist));
+
+// Bars: one bar per set, length ∝ its share of the workout. Section headings stay; a group gets a
+// header line, then each set in the round gets its own bar (volume across all rounds), indented with a bracket.
+function drawBars(rows, x, top, width, bottom, accent) {
+  const lines = [];
+  for (const r of rows) {
+    if (r.heading) lines.push({ h: r.heading });
+    else if (r.group) {
+      lines.push({ g: `${r.reps}× round${r.label ? " · " + r.label : ""}`, vol: r.reps * r.dist });
+      r.items.forEach((it, i) => it.heading || lines.push({ label: `${setStr(it)} ${it.label}`.trim(), vol: r.reps * it.reps * it.dist,
+        ind: true, last: i === r.items.length - 1 }));
+    } else lines.push({ label: `${setStr(r)} ${r.label}`.trim(), vol: r.reps * r.dist });
+  }
+  if (!lines.length) return;
+  const hOf = (l, size) => l.h ? size * 1.15 : l.g ? size * 1.45 : size * 2.45; // heading / group header / label + bar
+  const heightOf = (ls, size) => ls.reduce((t, l) => t + hOf(l, size), 0);
+  let size = 36, shown = lines;
+  while (size > 22 && heightOf(lines, size) > bottom - top) size -= 2;
+  while (shown.length > 1 && heightOf(shown, size) + size * 1.4 > bottom - top) shown = shown.slice(0, -1); // ponytail: overflow dropped
+  while (shown.length < lines.length && (shown.at(-1).h || shown.at(-1).g)) shown = shown.slice(0, -1);
+  const extra = lines.length - shown.length, IND = size * 1.1;
+  const max = Math.max(1, ...shown.filter(l => l.label).map(l => l.vol));
+  let y = bottom - heightOf(shown, size) - (extra ? size * 1.4 : 0), groupTop = null;
+  for (const l of shown) {
+    if (l.h) txt(l.h.toUpperCase(), x, y + size * 0.75, size * 0.62, { color: accent, spacing: 4 });
+    else if (l.g) {
+      txt(l.g, x, y + size * 1.05, size, { weight: 800 });
+      font(size, 800); txt(fmtNum(l.vol), x + ctx.measureText(l.g + "  ").width, y + size * 1.05, size, { weight: 800, color: accent });
+      groupTop = y + size * 1.45;
+    } else {
+      const lx = x + (l.ind ? IND : 0), bh = size * 0.62, by = y + size * 1.35;
+      const bw = Math.max((width - (l.ind ? IND : 0) - 150) * l.vol / max, 8);
+      font(size * 0.9, 600); txt(clip(l.label, width - (lx - x)), lx, y + size * 1.0, size * 0.9, { weight: 600 });
+      ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(lx, by, bw, bh, bh / 2); ctx.fill();
+      txt(fmtNum(l.vol), lx + bw + 14, by + bh * 0.85, bh * 1.1, { color: accent });
+      if (l.ind && l.last && groupTop !== null) { // bracket alongside the round's sets
+        ctx.fillStyle = accent; ctx.globalAlpha = 0.5; ctx.fillRect(x + 4, groupTop + 6, 5, by + bh - groupTop - 6); ctx.globalAlpha = 1; groupTop = null;
+      }
+    }
+    y += hOf(l, size);
+  }
+  if (extra) txt(`+${extra} more`, x, y + size, size * 0.8, { weight: 600, color: "rgba(255,255,255,.7)" });
+}
+
+function drawPoster(W, H, accent, unit, { total, secs, date }) {
+  const cx = W / 2, mid = H * 0.52;
+  txt(date.toUpperCase(), cx, mid - 300, 30, { weight: 600, color: accent, align: "center", spacing: 6 });
+  bfont(66); btxt(clip(f.heading.value.toUpperCase(), W - 160), cx, mid - 210, 66, { align: "center" });
+  bigDistance(total, unit, cx, mid + 60, 300, accent, W - 120, true);
+  const line = [secs && fmtTime(secs), secs && total && `${pacePer100(secs, total)} /100${unit}`].filter(Boolean).join("   ·   ");
+  if (line) txt(line, cx, mid + 170, 48, { weight: 600, align: "center" });
+  wordmark(cx, H - 80, "center");
+}
+
+// Text in any font family (txt() is Inter-only).
+function ft(s, x, y, size, color, family, { align = "left", weight = 400, maxW } = {}) {
+  ctx.font = `${weight} ${size}px ${family}`; ctx.fillStyle = color; ctx.textAlign = align;
+  ctx.fillText(maxW ? clip(s, maxW) : s, x, y);
+}
+const plain = s => s.replace(/×/g, "x");
+
+// Coach's whiteboard in marker. Groups get a hand-drawn bracket, total gets circled.
+function drawWhiteboard(W, H, unit, { rows, total, secs, date }) {
+  const MK = '"Permanent Marker", cursive', INK = "#1f2a44", BLUE = "#1d4ed8", RED = "#d62828";
+  const lines = [];
+  for (const r of rows) {
+    if (r.heading) lines.push({ t: r.heading + ":", c: RED });
+    else if (r.group) {
+      lines.push({ t: `${r.reps}x${r.label ? " " + r.label : ""}`, c: INK, open: true });
+      r.items.forEach((it, i) => lines.push({ t: it.heading || plain(`${setStr(it)} ${it.label}`), c: BLUE, ind: true, close: i === r.items.length - 1 }));
+    } else lines.push({ t: plain(`${setStr(r)} ${r.label}`), c: BLUE });
+  }
+  const bw = W - 100, bx = 50;
+  let size = 54, lh, bh;
+  const fixed = s => s * 4.6; // title + date + total + time lines
+  for (; size > 26; size -= 2) { lh = size * 1.3; bh = fixed(size) + lines.length * lh + 120; if (bh <= H - 160) break; }
+  bh = Math.min(bh, H - 160);
+  const by = (H - bh) / 2;
+  const maxLines = Math.floor((bh - fixed(size) - 120) / lh + 0.01); // epsilon: float rounding
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(-0.015); ctx.translate(-W / 2, -H / 2);
+  ctx.fillStyle = "#b9c0c8"; ctx.beginPath(); ctx.roundRect(bx - 16, by - 16, bw + 32, bh + 32, 14); ctx.fill(); // frame
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = "#fbfbf7"; ctx.fillRect(bx, by, bw, bh);
+  for (const [sx, sy, r] of [[0.3, 0.25, 260], [0.75, 0.6, 320], [0.45, 0.85, 220]]) { // eraser smudges
+    const g = ctx.createRadialGradient(bx + bw * sx, by + bh * sy, 0, bx + bw * sx, by + bh * sy, r);
+    g.addColorStop(0, "rgba(120,130,140,.07)"); g.addColorStop(1, "rgba(120,130,140,0)");
+    ctx.fillStyle = g; ctx.fillRect(bx, by, bw, bh);
+  }
+  const L = bx + 50, R = bx + bw - 50;
+  let y = by + 40 + size * 1.1;
+  ft(f.heading.value, L, y, size * 1.15, INK, MK, { maxW: R - L - 260 });
+  ft(date.replace(/^\w+, /, ""), R, y, size * 0.75, RED, MK, { align: "right" });
+  y += size * 0.5;
+  ctx.strokeStyle = INK; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(L, y); ctx.quadraticCurveTo((L + R) / 2, y + 6, R, y - 2); ctx.stroke();
+  y += lh;
+  let open = null;
+  const shown = lines.length <= maxLines ? lines : lines.slice(0, maxLines - 1);
+  while (shown.length < lines.length && shown.at(-1)?.c === RED) shown.pop(); // don't end on a heading
+  for (const l of shown) {
+    const x = L + (l.ind ? size * 1.3 : 0);
+    ft(l.t, x, y, size, l.c, MK, { maxW: R - x });
+    if (l.open) open = y;
+    if (l.close && open) { // bracket from the group line to its last set
+      ctx.strokeStyle = INK; ctx.lineWidth = 4; ctx.beginPath();
+      ctx.moveTo(L + size * 0.75, open + size * 0.25); ctx.lineTo(L + size * 0.55, open + size * 0.3);
+      ctx.lineTo(L + size * 0.55, y + size * 0.15); ctx.lineTo(L + size * 0.75, y + size * 0.2); ctx.stroke(); open = null;
+    }
+    y += lh;
+  }
+  if (lines.length > shown.length) { ft(`+${lines.length - shown.length} more…`, L, y, size * 0.7, INK, MK); y += lh; }
+  y += size * 0.6;
+  const tot = `${fmtNum(total)} ${unit}`;
+  ft("Total =", L, y, size * 1.05, INK, MK);
+  ctx.font = `400 ${size * 1.05}px ${MK}`; const tx = L + ctx.measureText("Total = ").width, tw = ctx.measureText(tot).width;
+  ft(tot, tx, y, size * 1.05, RED, MK);
+  ctx.strokeStyle = RED; ctx.lineWidth = 5; ctx.beginPath(); // scribbled circle
+  ctx.ellipse(tx + tw / 2, y - size * 0.35, tw / 2 + 30, size * 0.85, -0.04, 0.2, Math.PI * 2.1); ctx.stroke();
+  if (secs) ft(`${fmtTime(secs)}${total ? `  ·  ${pacePer100(secs, total)}/100` : ""}`, L, y + size * 1.4, size * 0.8, INK, MK);
+  logo(R - 190, by + bh - 96, 190, { color: INK, tonal: "rgba(31,42,68,.13)" });
+  ctx.restore();
+}
+
+// Pool timing scoreboard: amber LED dot-matrix on black.
+function drawScoreboard(W, H, unit, { rows, total, secs, date }) {
+  const VT = "VT323, monospace", AMB = "#ffb627", RED = "#ff4b3e", WHT = "#f6f1e3";
+  const sets = []; // lane rows: sets and rounds get a lane number; a round's sets follow, indented
+  let lane = 0;
+  for (const r of rows) {
+    if (r.heading) continue;
+    if (r.group) {
+      sets.push({ lane: ++lane, text: `${r.reps}X ROUND${r.label ? " " + r.label.toUpperCase() : ""}`, vol: r.reps * r.dist });
+      for (const it of r.items) if (!it.heading) sets.push({ text: plain(`${setStr(it)} ${it.label}`).toUpperCase(), vol: it.reps * it.dist, sub: true });
+    } else sets.push({ lane: ++lane, text: plain(`${setStr(r)} ${r.label}`).toUpperCase(), vol: r.reps * r.dist });
+  }
+  const bw = W - 100, bx = 50;
+  let size = 62, lh, bh;
+  for (; size > 34; size -= 2) { lh = size * 1.05; bh = 90 + lh * (4 + sets.length) + size * 4.2; if (bh <= H - 200) break; }
+  const maxSets = Math.max(1, Math.floor((H - 200 - 90 - lh * 4 - size * 4.2) / lh));
+  const shown = sets.slice(0, sets.length > maxSets ? maxSets - 1 : maxSets);
+  bh = 90 + lh * (4 + shown.length + (shown.length < sets.length ? 1 : 0)) + size * 4.2;
+  const by = (H - bh) / 2;
+  ctx.fillStyle = "#26282b"; ctx.beginPath(); ctx.roundRect(bx - 18, by - 54, bw + 36, bh + 72, 12); ctx.fill();
+  ctx.shadowColor = "transparent";
+  txt("SWIMSHOT TIMING", W / 2, by - 16, 26, { color: "rgba(255,255,255,.75)", align: "center", spacing: 8 });
+  ctx.fillStyle = "#050505"; ctx.fillRect(bx, by, bw, bh);
+  const L = bx + 40, R = bx + bw - 40, glow = c => { ctx.shadowColor = c; ctx.shadowBlur = 14; ctx.shadowOffsetY = 0; };
+  let y = by + 30 + size;
+  glow(AMB); ft("EVENT 1", L, y, size, AMB, VT); ft(date.replace(/^\w+, /, "").toUpperCase(), R, y, size, AMB, VT, { align: "right" });
+  y += lh; glow(WHT); ft(f.heading.value.toUpperCase(), L, y, size * 1.1, WHT, VT, { maxW: R - L });
+  y += lh * 1.3; glow(RED); ft("LN", L, y, size * 0.8, RED, VT); ft("SET", L + size * 1.6, y, size * 0.8, RED, VT); ft(unit.toUpperCase(), R, y, size * 0.8, RED, VT, { align: "right" });
+  y += lh;
+  shown.forEach(s => {
+    const tx = L + size * (s.sub ? 2.4 : 1.6);
+    if (s.lane) { glow(RED); ft(String(s.lane), L + size * 0.3, y, size, RED, VT); }
+    glow(WHT); ft((s.sub ? "· " : "") + s.text, tx, y, size * (s.sub ? 0.85 : 1), s.sub ? "#b9b4a8" : WHT, VT, { maxW: R - tx - size * 2.8 });
+    glow(AMB); ft(String(s.vol), R, y, size * (s.sub ? 0.85 : 1), s.sub ? "#c98f22" : AMB, VT, { align: "right" });
+    y += lh;
+  });
+  if (shown.length < sets.length) { glow(WHT); ft(`+${sets.length - shown.length} MORE`, L + size * 1.6, y, size * 0.8, WHT, VT); y += lh; }
+  y += size * 0.9;
+  glow(RED); ft("TOTAL", L, y, size, RED, VT);
+  glow(AMB); ft(`${total} ${unit.toUpperCase()}`, R, y + size * 0.15, size * 1.7, AMB, VT, { align: "right" });
+  y += size * 1.5;
+  if (secs) {
+    glow(RED); ft("TIME", L, y, size, RED, VT); glow(AMB); ft(fmtTime(secs), R, y, size * 1.3, AMB, VT, { align: "right" });
+    y += size * 1.2;
+    if (total) { glow(RED); ft(`PACE/100`, L, y, size, RED, VT); glow(AMB); ft(pacePer100(secs, total), R, y, size * 1.3, AMB, VT, { align: "right" }); }
+  }
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = "rgba(5,5,5,.85)"; // LED dot grid over the panel
+  for (let gy = by; gy < by + bh; gy += 6) ctx.fillRect(bx, gy, bw, 2);
+  for (let gx = bx; gx < bx + bw; gx += 6) ctx.fillRect(gx, by, 2, bh);
+}
+
+// "Workout Facts" nutrition-label parody: each set's % of the whole workout.
+function drawFacts(W, H, unit, { rows, total, secs, date }) {
+  const items = []; // {label, amt, bold, ind}
+  let sec = null;
+  for (const r of rows) {
+    if (r.heading) { sec = { label: r.heading, amt: 0, bold: true }; items.push(sec); continue; }
+    const amt = r.reps * r.dist, ind = sec ? 1 : 0;
+    if (r.group) {
+      items.push({ label: `${r.reps}x round${r.label ? " " + r.label : ""}`, amt, ind, round: true });
+      for (const it of r.items) if (!it.heading) items.push({ label: plain(`${setStr(it)} ${it.label}`), amt: r.reps * it.reps * it.dist, ind: ind + 1 });
+    } else items.push({ label: plain(`${setStr(r)} ${r.label}`), amt, ind });
+    if (sec) sec.amt += amt;
+  }
+  const pw = Math.min(W - 120, 860), px = (W - pw) / 2, ink = "#111";
+  let s = 1, ph;
+  const heightAt = s => s * (300 + items.length * 62 + (secs ? 130 : 0) + 232);
+  while (heightAt(s) > H - 160 && s > 0.55) s -= 0.05;
+  ph = heightAt(s);
+  const py = (H - ph) / 2, pad = 28 * s, L = px + pad, R = px + pw - pad;
+  ctx.fillStyle = "#fff"; ctx.fillRect(px, py, pw, ph);
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = ink; ctx.lineWidth = 5 * s; ctx.strokeRect(px + 2, py + 2, pw - 4, ph - 4);
+  const I = "Inter, Helvetica, Arial, sans-serif";
+  const rule = (y, t) => { ctx.fillStyle = ink; ctx.fillRect(L, y, R - L, t); };
+  let y = py + pad + 84 * s;
+  ctx.font = `900 ${96 * s}px ${I}`; ctx.fillStyle = ink; ctx.textAlign = "left"; ctx.letterSpacing = `${-3 * s}px`;
+  ctx.fillText(clip("Workout Facts", R - L), L, y); ctx.letterSpacing = "0px";
+  y += 14 * s; rule(y, 3 * s); y += 44 * s;
+  ft(f.heading.value, L, y, 34 * s, ink, I, { maxW: R - L });
+  y += 42 * s;
+  ft("Serving size", L, y, 34 * s, ink, I, { weight: 800 }); ft(`1 swim${date ? ` (${date.replace(/^\w+, /, "")})` : ""}`, R, y, 34 * s, ink, I, { weight: 800, align: "right" });
+  y += 18 * s; rule(y, 22 * s); y += 50 * s;
+  ft("Amount per serving", L, y, 26 * s, ink, I, { weight: 800 });
+  y += 62 * s;
+  ft(unit === "yd" ? "Yards" : "Meters", L, y, 64 * s, ink, I, { weight: 900 }); ft(fmtNum(total), R, y, 72 * s, ink, I, { weight: 900, align: "right" });
+  y += 18 * s; rule(y, 12 * s); y += 40 * s;
+  ft("% Daily Value*", R, y, 26 * s, ink, I, { weight: 800, align: "right" });
+  for (const it of items) {
+    y += 14 * s; rule(y, 1.5 * s); y += 46 * s;
+    const pct = total ? `${Math.round(100 * it.amt / total)}%` : "";
+    const x = L + (it.ind || 0) * 34 * s, wt = it.bold || it.round ? 800 : 400;
+    ctx.font = `800 ${32 * s}px ${I}`; const pw2 = ctx.measureText(pct).width;
+    ctx.font = `${wt} ${32 * s}px ${I}`;
+    const lab = clip(it.label, R - x - pw2 - 150 * s);
+    ft(lab, x, y, 32 * s, ink, I, { weight: wt });
+    ctx.font = `${wt} ${32 * s}px ${I}`; const lw = ctx.measureText(lab + " ").width;
+    ft(fmtNum(it.amt) + unit, x + lw, y, 32 * s, ink, I, { weight: 400 });
+    ft(pct, R, y, 32 * s, ink, I, { weight: 800, align: "right" });
+  }
+  y += 18 * s; rule(y, 12 * s);
+  if (secs) {
+    y += 52 * s; ft("Time", L, y, 32 * s, ink, I, { weight: 800 }); ft(fmtTime(secs), R, y, 32 * s, ink, I, { weight: 800, align: "right" });
+    y += 14 * s; rule(y, 1.5 * s); y += 46 * s;
+    ft(`Pace per 100${unit}`, L, y, 32 * s, ink, I, { weight: 800 }); ft(pacePer100(secs, total) || "—", R, y, 32 * s, ink, I, { weight: 800, align: "right" });
+    y += 18 * s; rule(y, 6 * s);
+  }
+  y += 40 * s;
+  ft("* Percent of today's workout. Not a significant", L, y, 24 * s, ink, I);
+  ft("source of rest. Contains chlorine.", L, y + 32 * s, 24 * s, ink, I);
+  ft("Distributed by Swim House Mafia.", L, y + 64 * s, 24 * s, ink, I, { weight: 800 });
+}
+
+// Paper receipt: one line item per set, totals at the bottom.
+function drawReceipt(W, H, accent, unit, { rows, total, secs, date }) {
+  const lines = [["c", "SWIMSHOT", true], ["c", "by Swim House Mafia"], ["c", f.heading.value.toUpperCase()], ["c", date], ["-"]];
+  for (const r of rows) {
+    if (r.heading) lines.push(["l", `** ${r.heading.toUpperCase()} **`, true]);
+    else if (r.group) {
+      lines.push(["lr", `${r.reps}x ${r.label || "ROUNDS"}`.toUpperCase(), fmtNum(r.reps * r.dist), true]);
+      for (const it of r.items) lines.push(it.heading ? ["l", `  | ${it.heading}`] : ["lr", `  | ${setStr(it)} ${it.label}`, ""]);
+    } else lines.push(["lr", `${setStr(r)} ${r.label}`, fmtNum(r.reps * r.dist)]);
+  }
+  lines.push(["-"], ["lr", "TOTAL", `${fmtNum(total)} ${unit}`, true]);
+  if (secs) lines.push(["lr", "TIME", fmtTime(secs)]);
+  if (secs && total) lines.push(["lr", `PACE /100${unit}`, pacePer100(secs, total)]);
+  lines.push(["-"], ["c", "THANK YOU FOR SWIMMING"], ["bar"]);
+
+  const pw = W * 0.8, px = (W - pw) / 2, pad = 56;
+  let size = 34;
+  while (size > 20 && lines.length * size * 1.55 + 2 * pad + size * 2 > H - 160) size -= 2;
+  const lh = size * 1.55, ph = lines.length * lh + 2 * pad + size * 2, py = (H - ph) / 2;
+  ctx.fillStyle = "#f7f4ec"; // paper with zigzag bottom edge
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + pw, py); ctx.lineTo(px + pw, py + ph);
+  for (let x = px + pw, i = 0; x > px; x -= 18, i++) ctx.lineTo(x - 18, py + ph + (i % 2 ? 0 : 14));
+  ctx.closePath(); ctx.fill();
+  ctx.shadowColor = "transparent";
+
+  const mono = b => (ctx.font = `${b ? 700 : 400} ${size}px "JetBrains Mono", ui-monospace, monospace`);
+  const ink = "#1d1d1f", L = px + pad, R = px + pw - pad;
+  let y = py + pad + size;
+  for (const [kind, a, b, bold] of lines) {
+    ctx.fillStyle = ink; ctx.textAlign = "left";
+    if (kind === "-") { mono(); ctx.fillText("-".repeat(Math.floor((R - L) / ctx.measureText("-").width)), L, y); }
+    else if (kind === "c") { mono(b); ctx.textAlign = "center"; ctx.fillText(clip(a, R - L), W / 2, y); }
+    else if (kind === "l") { mono(b); ctx.fillText(clip(a, R - L), L, y); }
+    else if (kind === "lr") {
+      mono(bold); const rw = ctx.measureText(b).width;
+      ctx.textAlign = "right"; ctx.fillText(b, R, y);
+      ctx.textAlign = "left"; ctx.fillText(clip(a, R - L - rw - size), L, y);
+    } else if (kind === "bar") { // decorative barcode
+      for (let x = L + (R - L) * 0.15, i = 0; x < R - (R - L) * 0.15; i++) { const bw = [3, 6, 2, 9, 4][i % 5]; ctx.fillRect(x, y - size, bw, size * 1.6); x += bw + 5; }
+    }
+    y += lh;
+  }
+}
+
+function drawStats(W, H, accent, unit) {
+  const M = 80;
+  if (!form) { txt("FORM stats unavailable", M, H / 2, 56); return; }
+  const p = cur.period, s = form.stats[p], conv = unit === "yd" ? M_TO_YD : 1;
+  const name = form.me.firstName ? `${form.me.firstName}'s swimming` : "Swimming";
+  txt({ week: "THIS WEEK", year: `${new Date().getFullYear()}`, alltime: "ALL TIME" }[p], M, M + 40, 34, { color: accent, spacing: 8 });
+  font(64); txt(clip(name, W - 2 * M), M, M + 120, 64);
+  if (p !== "week" && s.distance) { // fun fact; English Channel = 33.8 km
+    const miles = s.distance / 1609.34, ch = s.distance / 33800;
+    txt(`≈ ${fmtNum(miles)} miles · ${ch >= 10 ? fmtNum(ch) : ch.toFixed(1)} English Channel crossings`, M, M + 180, 32, { weight: 600, color: "rgba(255,255,255,.8)" });
+  }
+
+  footer(W, H, M, "Tracked with FORM");
+  let y = H - M - 90;
+  const hours = s.movingTime >= 36000 ? `${fmtNum(s.movingTime / 3600)}h` : fmtTime(s.movingTime);
+  statRow([{ label: "Swims", value: fmtNum(s.swimsCount) }, { label: "Time", value: hours },
+           { label: "Top stroke", value: cap(s.favoriteStrokeType || "—") }], M, y, W - 2 * M);
+  y -= 150;
+  bigDistance(s.distance * conv, unit, M, y, 230, accent, W - 2 * M);
+
+  // stroke split is only available all-time
+  const split = form.stats.userSwimHistory?.totalDistancePerStrokeType;
+  if (p !== "alltime" || !split?.length) return;
+  const sum = split.reduce((a, b) => a + b.totalDistance, 0), barY = y - 230 - 120, barW = W - 2 * M;
+  let x = M;
+  for (const st of split) {
+    const w = barW * st.totalDistance / sum;
+    ctx.fillStyle = STROKE_COLORS[st.strokeType] || "#ccc"; ctx.fillRect(x, barY, Math.max(w - 3, 0), 28); x += w;
+  }
+  const big = split.filter(st => st.totalDistance / sum >= 0.01).sort((a, b) => b.totalDistance - a.totalDistance);
+  const legendRows = Math.ceil(big.length / 2);
+  big.forEach((st, i) => { // two columns, largest stroke top-left
+    const lx = M + (i % 2) * barW / 2, ly = barY - 60 - (legendRows - 1 - Math.floor(i / 2)) * 56;
+    ctx.fillStyle = STROKE_COLORS[st.strokeType] || "#ccc"; ctx.fillRect(lx, ly - 26, 26, 26);
+    txt(`${cap(st.strokeType)} ${Math.round(100 * st.totalDistance / sum)}%`, lx + 42, ly, 34, { weight: 600 });
+  });
+}
+const cap = s => s[0].toUpperCase() + s.slice(1);
+
+
+
+// ---- looks (carousel slides) ----
+const LOOKS = [["full", "Classic"], ["receipt", "Receipt"], ["whiteboard", "Whiteboard"], ["scoreboard", "Scoreboard"],
+               ["facts", "Workout Facts"], ["bars", "Bars"], ["poster", "Poster"], ["minimal", "Minimal"]];
+const slides = () => [...LOOKS.map(([layout, name]) => ({ layout, name })),
+  ...(form ? [["year", "Your year"], ["alltime", "All time"], ["week", "This week"]].map(([period, name]) => ({ period, name, stats: true })) : [])];
+let list = [], full = [], idx = 0, renderId = 0;
+const PREVIEW = 0.5; // previews render at half size: much faster on phones, still sharp on screen
+
+// Draws slide s at `scale` (card code always works in full 1080-wide coordinates).
+// Text overlay placement: scale around the card center plus an offset (card px). Set on the Adjust screen.
+const ovl = { s: 1, x: 0, y: 0 };
+function drawSlide(s, scale = 1) {
+  const [W, H] = SIZES[f.size.value], accent = f.accent.value, unit = f.unit.value;
+  cv.width = W * scale; cv.height = H * scale;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  background(W, H, f.sticker.checked);
+  ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 18 * scale; ctx.shadowOffsetY = 2;
+  ctx.save(); ctx.translate(W / 2 + ovl.x, H / 2 + ovl.y); ctx.scale(ovl.s, ovl.s); ctx.translate(-W / 2, -H / 2);
+  if (s.stats) { cur.period = s.period; drawStats(W, H, accent, unit); }
+  else { cur.layout = s.layout; drawWorkout(W, H, accent, unit); }
+  ctx.restore();
+  ctx.shadowColor = "transparent";
+  const png = scale === 1 || f.sticker.checked; // toBlob snapshots now, so the next draw can start right away
+  return new Promise(r => cv.toBlob(r, png ? "image/png" : "image/jpeg", 0.88));
+}
+
+function setImg(i, blob) {
+  const img = $("carousel").querySelectorAll("img")[i];
+  if (!img || !blob) return;
+  URL.revokeObjectURL(img.src);
+  img.src = URL.createObjectURL(blob);
+  if (i === idx) $("thumb").src = img.src;
+}
+
+function buildCarousel() {
+  list = slides();
+  $("carousel").innerHTML = list.map((s, i) => `<div class="slide"><div><img alt="${s.name} card" data-i="${i}" onload="this.classList.add('ready')"></div></div>`).join("");
+  $("dots").innerHTML = list.map(() => "<i></i>").join("");
+  full = [];
+  idx = Math.min(idx, list.length - 1);
+  requestAnimationFrame(() => { $("carousel").scrollLeft = idx * $("carousel").clientWidth; updateName(); });
+}
+
+// Previews: visible slide first, then outward. A newer call cancels an older one.
+async function renderAll() {
+  const id = ++renderId, [W, H] = SIZES[f.size.value];
+  app.style.setProperty("--rw", W); app.style.setProperty("--rh", H);
+  full = [];
+  const order = list.map((_, i) => i).sort((a, b) => Math.abs(a - idx) - Math.abs(b - idx));
+  for (const i of order) {
+    const blob = await drawSlide(list[i], PREVIEW);
+    if (id !== renderId) return;
+    if (!full[i]) setImg(i, blob);
+    if (i === idx) settle();
+    await new Promise(r => setTimeout(r, 0)); // yield so swiping and typing stay smooth
+  }
+}
+let rt; const renderSoon = (ms = 120) => { clearTimeout(rt); rt = setTimeout(renderAll, ms); };
+
+// Full-size image for the slide you stopped on: what Share and long-press "Save" use.
+async function renderFull(i) {
+  if (full[i]) return full[i];
+  const id = renderId, blob = await drawSlide(list[i], 1);
+  if (id === renderId) { full[i] = blob; setImg(i, blob); }
+  return blob;
+}
+let st; const settle = () => { clearTimeout(st); st = setTimeout(() => list[idx] && renderFull(idx), 250); };
+
+let target = null; // slide an arrow-key scroll is heading to; in-between positions are ignored
+function showSlide(i) {
+  idx = target = Math.max(0, Math.min(i, list.length - 1));
+  $("carousel").scrollTo({ left: idx * $("carousel").clientWidth, behavior: "smooth" });
+  updateName();
+}
+function updateName() {
+  $("slideName").textContent = list[idx]?.name || "";
+  [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i === idx));
+  persist();
+}
+$("carousel").addEventListener("touchstart", () => { target = null; }, { passive: true });
+$("carousel").addEventListener("scroll", () => {
+  const c = $("carousel"), i = Math.round(c.scrollLeft / c.clientWidth);
+  if (!c.clientWidth) return; // hidden while editing
+  if (target !== null) { if (i === target) target = null; else return; }
+  if (i !== idx && list[i]) { idx = i; updateName(); swiped(); }
+  settle();
+}, { passive: true });
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, textarea, select") || document.querySelector("dialog[open]") || !$("viewer").hidden || !$("adjust").hidden) return;
+  if (e.key === "ArrowLeft") showSlide(idx - 1);
+  if (e.key === "ArrowRight") showSlide(idx + 1);
+});
+
+// one-time "swipe for more" hint
+function swiped() { $("hint").hidden = true; try { localStorage.setItem("swimshot.swiped", "1"); } catch {} }
+try { if (!localStorage.getItem("swimshot.swiped")) setTimeout(() => { $("hint").hidden = false; }, 1200); } catch {}
+
+// ---- workout sheet ----
+const sheet = $("sheet"), app = $("app");
+function openSheet(open = !sheet.classList.contains("open"), focus = true) {
+  sheet.classList.toggle("open", open); app.classList.toggle("editing", open);
+  $("done").hidden = !open; $("save").hidden = open;
+  if (open && focus) f.sets.focus({ preventScroll: true });
+  if (!open) {
+    document.activeElement?.blur(); app.classList.remove("typing");
+    requestAnimationFrame(() => { $("carousel").scrollLeft = idx * $("carousel").clientWidth; }); // restore the look you were on
+    renderAll();
+  }
+}
+$("sum").onclick = () => openSheet(true);
+$("thumb").onclick = () => openSheet(false);
+f.sets.addEventListener("focus", () => app.classList.add("typing"));
+f.sets.addEventListener("blur", () => app.classList.remove("typing"));
+$("done").onclick = () => openSheet(false);
+// drag/flick the handle: up opens, down closes, tap toggles
+let drag = null;
+$("grab").addEventListener("pointerdown", e => { drag = e.clientY; $("grab").setPointerCapture(e.pointerId); });
+$("grab").addEventListener("pointerup", e => {
+  if (drag === null) return;
+  const dy = e.clientY - drag; drag = null;
+  Math.abs(dy) < 8 ? openSheet() : openSheet(dy < 0);
+});
+
+function summarize() {
+  const { rows, total } = parseSets(f.sets.value), secs = parseTime(f.time.value), unit = f.unit.value;
+  const n = rows.filter(r => !r.heading).length;
+  $("sumTotal").textContent = total ? `${fmtNum(total)} ${unit}` : "New workout";
+  $("sumMeta").textContent = total
+    ? [`${n} set${n === 1 ? "" : "s"}`, secs && fmtTime(secs), secs && `${pacePer100(secs, total)}/100`].filter(Boolean).join(" · ")
+    : "Tap to write your sets";
+  return total;
+}
+
+// Insert bar: keeps the keyboard open and adds sensible spacing/newlines.
+document.querySelectorAll("[data-ins]").forEach(b => {
+  b.onpointerdown = e => e.preventDefault();
+  b.onclick = () => {
+    const ta = f.sets, t = b.dataset.ins, before = ta.value.slice(0, ta.selectionStart);
+    const lineStart = before === "" || before.endsWith("\n");
+    let s;
+    if (["Warmup", "Main", "Cooldown"].includes(t)) s = (lineStart ? "" : "\n") + t + "\n";
+    else if (t === "-") s = lineStart ? "- " : "-";
+    else if (t === "x") s = "x";
+    else if (t === "@") s = (lineStart || /\s$/.test(before) ? "" : " ") + "@";
+    else s = (lineStart || /\s$/.test(before) ? "" : " ") + t + " ";
+    ta.focus(); ta.setRangeText(s, ta.selectionStart, ta.selectionEnd, "end");
+    changed();
+  };
+});
+
+function changed() { summarize(); persist(); renderSoon(); }
+f.addEventListener("input", e => { if (e.target.name !== "photo" && !e.target.closest("#adjust")) changed(); });
+
+// Keep the sheet above the iPhone keyboard: size the app to the visible viewport.
+if (window.visualViewport) {
+  const vv = visualViewport, fit = () => {
+    app.style.height = vv.height + "px"; app.style.top = vv.offsetTop + "px";
+    app.style.setProperty("--h", vv.height + "px");
+  };
+  vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); fit();
+}
+
+// ---- style / help sheets ----
+const openDialog = id => { $(id).showModal(); $(id).focus(); };
+$("styleBtn").onclick = () => { $("removePhoto").hidden = !photo; openDialog("styleSheet"); };
+$("adjustFromStyle").onclick = () => { $("styleSheet").close(); openAdjust("text"); };
+$("removePhoto").onclick = () => { photo = null; f.photo.value = ""; $("removePhoto").hidden = true; $("photoBtn").classList.remove("on"); renderAll(); };
+$("helpBtn").onclick = () => openDialog("helpSheet");
+document.querySelectorAll("dialog").forEach(d =>
+  d.addEventListener("click", e => { if (e.target === d || e.target.matches("[data-close]")) d.close(); }));
+$("example").onclick = () => {
+  f.sets.value = "Warmup\n400 swim\n4x50 kick @1:00\nMain\n3x\n- 100 free @1:30\n- 2x50 fly\n- 100 IM\n6x50 descend 1-3\nCooldown\n200 easy";
+  $("helpSheet").close(); changed();
+};
+// ---- photo: pick, then frame it (drag to move, pinch/scroll/slider to zoom) ----
+$("photoBtn").onclick = () => photo ? openAdjust("photo") : f.photo.click();
+$("adjReplace").onclick = () => f.photo.click();
+$("adjReset").onclick = () => {
+  if (adjTarget() === "photo") Object.assign(frame, { zoom: 1, fx: 0.5, fy: 0.5 }); else Object.assign(ovl, { s: 1, x: 0, y: 0 });
+  syncZoom(); paintAdjust();
+};
+$("adjDone").onclick = () => closeAdjust();
+// Decode the picked photo and shrink it to <= 2400px on the long side: phone photos are 12-48 MP,
+// which iPhone browsers can silently fail to draw. <img> decoding first (widest format support, incl. HEIC
+// on iPhone); createImageBitmap as a fallback. Each step is time-limited so a stuck decoder can't hang the app.
+const within = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+async function loadPhoto(file) {
+  const url = URL.createObjectURL(file), img = new Image();
+  img.src = url;
+  let src = await within(img.decode().then(() => img, () => null), 8000);
+  if (!src) src = await within(createImageBitmap(file).catch(() => null), 8000);
+  if (!src || !src.width) { URL.revokeObjectURL(url); return null; }
+  const k = Math.min(1, 2400 / Math.max(src.width, src.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(src.width * k); c.height = Math.round(src.height * k);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  src.close?.(); URL.revokeObjectURL(url);
+  return c;
+}
+f.photo.onchange = async () => {
+  const file = f.photo.files[0];
+  if (!file) return;
+  const pic = await loadPhoto(file);
+  if (!pic) return alert("Couldn't read that image. Try a JPEG or PNG.");
+  photo = pic; Object.assign(frame, { zoom: 1, fx: 0.5, fy: 0.5 });
+  f.sticker.checked = false; persist(); // a photo means you want it shown; sticker mode hides backgrounds
+  $("photoBtn").classList.add("on");
+  if ($("adjust").hidden) openAdjust("photo"); else { f.adjWhat.value = "photo"; syncZoom(); paintAdjust(); }
+};
+
+// While adjusting, the card's text is drawn once onto a transparent layer; each frame only redraws the photo under it.
+const adj = $("adjCv"), actx = adj.getContext("2d"), textLayer = document.createElement("canvas");
+const ADJ = 0.5;
+const adjTarget = () => f.adjWhat.value; // "photo" | "text"
+function syncZoom() { // the slider follows whatever you're adjusting
+  const z = $("zoom"), t = adjTarget();
+  [z.min, z.max] = t === "photo" ? [100, 400] : [40, 160];
+  z.value = Math.round((t === "photo" ? frame.zoom : ovl.s) * 100);
+  $("adjHint").textContent = t === "photo" ? "Drag to move · pinch to zoom" : "Drag to move · pinch to resize";
+}
+function openAdjust(what = "text") {
+  const [W, H] = SIZES[f.size.value], keep = f.sticker.checked, keepO = { ...ovl };
+  Object.assign(ovl, { s: 1, x: 0, y: 0 }); f.sticker.checked = true;
+  drawSlide(list[idx] || { layout: "full" }, ADJ); // untransformed text on transparent: moved/scaled live below
+  f.sticker.checked = keep; Object.assign(ovl, keepO);
+  textLayer.width = cv.width; textLayer.height = cv.height; textLayer.getContext("2d").drawImage(cv, 0, 0);
+  adj.width = W * ADJ; adj.height = H * ADJ;
+  f.adjWhat.value = what === "photo" && photo ? "photo" : "text";
+  f.adjWhat[0].disabled = !photo;
+  syncZoom();
+  $("adjust").hidden = false; $("adjDone").focus();
+  paintAdjust();
+}
+function closeAdjust() {
+  $("adjust").hidden = true; persist();
+  $("photoBtn").classList.toggle("on", !!photo);
+  renderAll();
+}
+let paintQueued = false;
+function paintAdjust() {
+  if (paintQueued) return; paintQueued = true;
+  requestAnimationFrame(() => {
+    paintQueued = false;
+    const [W, H] = SIZES[f.size.value];
+    actx.setTransform(ADJ, 0, 0, ADJ, 0, 0);
+    background(W, H, f.sticker.checked, actx); // same as the final card
+    actx.translate(W / 2 + ovl.x, H / 2 + ovl.y); actx.scale(ovl.s, ovl.s); actx.translate(-W / 2, -H / 2);
+    actx.drawImage(textLayer, 0, 0, W, H);
+  });
+}
+// gestures: one finger pans, two fingers pinch-zoom (around their midpoint), wheel zooms
+const pts = new Map();
+let last = null;
+function setZoom(z) {
+  if (adjTarget() === "photo") frame.zoom = Math.min(4, Math.max(1, z));
+  else ovl.s = Math.min(1.6, Math.max(0.4, z));
+  syncZoom(); paintAdjust();
+}
+const zoomNow = () => adjTarget() === "photo" ? frame.zoom : ovl.s;
+function pan(dx, dy) {
+  const [W, H] = SIZES[f.size.value], k = W / adj.getBoundingClientRect().width;
+  if (adjTarget() === "text") { // keep at least part of the text on the card
+    ovl.x = Math.max(-W * 0.6, Math.min(W * 0.6, ovl.x + dx * k));
+    ovl.y = Math.max(-H * 0.6, Math.min(H * 0.6, ovl.y + dy * k));
+    return paintAdjust();
+  }
+  if (!photo) return;
+  const r = photoRect(W, H); // screen px -> photo fraction
+  frame.fx = Math.min(1, Math.max(0, (W / 2 - (r.x + dx * k)) / r.w));
+  frame.fy = Math.min(1, Math.max(0, (H / 2 - (r.y + dy * k)) / r.h));
+  paintAdjust();
+}
+const gesture = () => {
+  const p = [...pts.values()];
+  if (p.length === 1) return { x: p[0].x, y: p[0].y, d: 0 };
+  return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) };
+};
+adj.addEventListener("pointerdown", e => { adj.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = gesture(); });
+adj.addEventListener("pointermove", e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const g = gesture();
+  if (last && g.d && last.d) setZoom(zoomNow() * g.d / last.d);
+  if (last) pan(g.x - last.x, g.y - last.y);
+  last = g;
+});
+const lift = e => { pts.delete(e.pointerId); last = pts.size ? gesture() : null; };
+adj.addEventListener("pointerup", lift); adj.addEventListener("pointercancel", lift);
+adj.addEventListener("wheel", e => { e.preventDefault(); setZoom(zoomNow() * Math.exp(-e.deltaY / 400)); }, { passive: false });
+f.adjWhat.forEach(r => r.addEventListener("change", e => { e.stopPropagation(); syncZoom(); }));
+$("zoom").addEventListener("input", e => { e.stopPropagation(); setZoom(e.target.value / 100); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("adjust").hidden) closeAdjust(); });
+
+// ---- share ----
+const canShareFiles = !!navigator.canShare?.({ files: [new File([""], "a.png", { type: "image/png" })] }); // needs https
+const fileName = i => `swimshot-${f.date.value || "card"}-${list[i].layout || list[i].period}.png`;
+
+// Share sheet when the browser allows it (https); otherwise the full-screen viewer, where
+// press-and-hold → "Save to Photos" puts the card straight in the camera roll.
+async function share() {
+  if (!summarize() && !list[idx]?.stats) return openSheet(true);
+  const i = idx, blob = full[i] || await renderFull(i); // usually ready already, so the tap still counts as a tap
+  if (canShareFiles) {
+    try { return await navigator.share({ files: [new File([blob], fileName(i), { type: "image/png" })] }); }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  openViewer(blob, i);
+}
+let viewBlob = null, viewName = "";
+function openViewer(blob, i) {
+  viewBlob = blob; viewName = fileName(i);
+  URL.revokeObjectURL($("viewImg").src);
+  $("viewImg").src = URL.createObjectURL(blob);
+  $("viewer").hidden = false; $("viewClose").focus();
+}
+const closeViewer = () => { $("viewer").hidden = true; $("save").focus(); };
+$("viewClose").onclick = closeViewer;
+$("viewer").addEventListener("click", e => { if (e.target === $("viewer")) closeViewer(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("viewer").hidden) closeViewer(); });
+$("viewDl").onclick = () => {
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(viewBlob), download: viewName });
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("save").onclick = share;
+$("carousel").addEventListener("click", e => { if (e.target.dataset.i == idx) sheet.classList.contains("open") ? openSheet(false) : share(); });
+if (!canShareFiles) $("save").querySelector("span").textContent = "Save";
+
+// ---- persisted inputs (convenience only; page works without storage) ----
+const KEEP = ["heading", "time", "sets", "unit", "size", "accent", "sticker", "dim"];
+function persist() { try {
+  localStorage.setItem("swimshot", JSON.stringify({ idx, ovl, ...Object.fromEntries(KEEP.map(k => [k, f[k].type === "checkbox" ? f[k].checked : f[k].value])) }));
+} catch {} }
+try {
+  const saved = JSON.parse(localStorage.getItem("swimshot") || "{}");
+  for (const k of KEEP) if (k in saved) f[k].type === "checkbox" ? (f[k].checked = saved[k]) : (f[k].value = saved[k]);
+  idx = saved.idx || 0;
+  if (saved.ovl) Object.assign(ovl, saved.ovl);
+} catch {}
+if (!f.accent.value) f.accent.value = "#F3EBDD";
+if (!f.size.value) f.size.value = "story";
+f.date.valueAsDate = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4);
+if (!f.heading.value) { const hr = new Date().getHours();
+  f.heading.value = `${hr < 11 ? "Morning" : hr < 15 ? "Lunch" : hr < 21 ? "Evening" : "Night"} Swim`; }
+
+// ---- title screen ----
+const DEMO = { heading: "Morning Swim", time: "4830",
+  sets: "Warmup\n400 swim\n4x50 kick\nMain\n3x\n- 100 free @1:30\n- 2x50 fly\n- 100 IM\nCooldown\n200 easy" };
+// Sample cards from a demo workout: swap the inputs in, draw (synchronous), swap back.
+async function renderFan() {
+  const keep = { heading: f.heading.value, time: f.time.value, sets: f.sets.value, sticker: f.sticker.checked, size: f.size.value, photo };
+  f.heading.value = DEMO.heading; f.time.value = DEMO.time; f.sets.value = DEMO.sets; f.sticker.checked = false; f.size.value = "story"; photo = null;
+  const jobs = ["receipt", "whiteboard", "full"].map(layout => drawSlide({ layout }, 0.4));
+  f.heading.value = keep.heading; f.time.value = keep.time; f.sets.value = keep.sets; f.sticker.checked = keep.sticker; f.size.value = keep.size; photo = keep.photo;
+  (await Promise.all(jobs)).forEach((b, i) => { const img = $("home").querySelectorAll(".fan img")[i]; URL.revokeObjectURL(img.src); img.src = URL.createObjectURL(b); });
+}
+function showHome(show = true) {
+  $("home").classList.toggle("gone", !show);
+  $("home").inert = !show; app.querySelectorAll(".stage, .sheet").forEach(el => el.inert = show);
+  if (show) {
+    const total = summarize();
+    $("continueBtn").hidden = !total;
+    $("continueBtn").textContent = `Continue · ${fmtNum(total)} ${f.unit.value} · ${f.heading.value}`;
+  }
+}
+$("newBtn").onclick = () => {
+  const hr = new Date().getHours();
+  f.heading.value = `${hr < 11 ? "Morning" : hr < 15 ? "Lunch" : hr < 21 ? "Evening" : "Night"} Swim`;
+  f.sets.value = ""; f.time.value = "";
+  f.date.valueAsDate = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4);
+  changed(); showHome(false); openSheet(true);
+};
+$("continueBtn").onclick = () => showHome(false);
+$("homeLogo").onclick = () => { openSheet(false); showHome(true); };
+
+buildCarousel();
+summarize();
+showHome(true);
+renderAll(); renderFan();
+
+fetch("/api/form").then(r => r.ok ? r.json() : Promise.reject()).then(d => { form = d; buildCarousel(); renderAll(); }).catch(() => {});
+Promise.all([logoReady, ...["800 64px Inter", "400 46px Inter", "600 34px Inter", "900 90px Inter", "700 34px \"JetBrains Mono\"",
+  "400 34px \"JetBrains Mono\"", "400 50px \"Permanent Marker\"", "400 50px VT323", "900 expanded 64px Archivo", "800 expanded 64px Archivo"]
+  .map(s => document.fonts.load(s).catch(() => {}))])
+  .then(() => { renderAll(); renderFan(); });
+</script>
+</body>
+</html>

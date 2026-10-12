@@ -1,0 +1,7 @@
+# Local only: FORM API work (reverse-engineered) and credentials. Never commit.
+form.py
+form_dump/
+.env
+*.flows
+__pycache__/
+.DS_Store
