@@ -8,7 +8,7 @@
 <title>Swimshot · Swim House Mafia</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,800;125,900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@400;700&family=Permanent+Marker&family=VT323&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,800;125,900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@400;700&family=Permanent+Marker&family=VT323&family=Playfair+Display:ital,wght@0,900;1,400&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#0c1320; --panel:#142033; --panel2:#1c2a42; --line:#26364f; --text:#F3EBDD; --muted:#9aa2b3; --accent:#F3EBDD; --ink:#17243A;
           --brand:"Archivo", Inter, system-ui, sans-serif;
@@ -422,6 +422,8 @@ function drawWorkout(W, H, accent, unit) {
   if (cur.layout === "whiteboard") return drawWhiteboard(W, H, unit, w);
   if (cur.layout === "scoreboard") return drawScoreboard(W, H, unit, w);
   if (cur.layout === "facts") return drawFacts(W, H, unit, w);
+  const fun = { clock: drawClock, boarding: drawBoarding, texts: drawTexts, player: drawPlayer, heats: drawHeats, news: drawNews }[cur.layout];
+  if (fun) return fun(W, H, accent, unit, w);
   bfont(56); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 56);
   txt(date, M, M + 120, 34, { weight: 600, color: "rgba(255,255,255,.8)" });
 
@@ -737,6 +739,341 @@ function drawFacts(W, H, unit, { rows, total, secs, date }) {
   ft("Distributed by Swim House Mafia.", L, y + 64 * s, 24 * s, ink, I, { weight: 800 });
 }
 
+// ---- shared helpers for the newer cards ----
+function wrap(s, maxW) { // word-wrap with the current ctx.font
+  const lines = [];
+  for (const para of String(s).split("\n")) {
+    let line = "";
+    for (const w of para.split(/\s+/).filter(Boolean)) {
+      const t = line ? line + " " + w : w;
+      if (line && ctx.measureText(t).width > maxW) { lines.push(line); line = w; } else line = t;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+const setText = r => plain(`${setStr(r)} ${r.label}`.trim());
+const describe = r => r.group ? `${r.reps}x (${r.items.filter(i => !i.heading).map(setText).join(", ")})` : setText(r);
+const interval = s => (s.match(/@\s*(\d{1,2}:\d{2})/) || [])[1];
+const unitWord = unit => unit === "yd" ? "yards" : "meters";
+function sections(rows) { // [{name, items}] — sets before any heading land in a nameless section
+  const out = [];
+  let sec = null;
+  for (const r of rows) {
+    if (r.heading) { sec = { name: r.heading, items: [] }; out.push(sec); }
+    else { if (!sec) { sec = { name: "", items: [] }; out.push(sec); } sec.items.push(r); }
+  }
+  return out.filter(s => s.items.length);
+}
+const shortDate = date => date.replace(/^\w+, /, "");
+
+// Pace clock: the four-hand pool clock. Red sweep hand sits on your pace seconds.
+function drawClock(W, H, accent, unit, { rows, total, secs, date }) {
+  const M = 80, cx = W / 2;
+  bfont(52); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), cx, M + 50, 52, { align: "center" });
+  txt(date, cx, M + 100, 30, { weight: 600, color: "rgba(255,255,255,.75)", align: "center" });
+  const R = Math.min(W * 0.34, H * 0.2), cy = M + 150 + R;
+  ctx.fillStyle = "#0b0d10"; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.lineWidth = R * 0.07; ctx.strokeStyle = "#e9edf2"; ctx.stroke();
+  for (let i = 0; i < 60; i++) {
+    const a = i / 60 * Math.PI * 2 - Math.PI / 2, big = i % 5 === 0, r1 = R * (big ? 0.78 : 0.85), r2 = R * 0.91;
+    ctx.strokeStyle = big ? "#fff" : "rgba(255,255,255,.5)"; ctx.lineWidth = big ? R * 0.024 : R * 0.01;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2); ctx.stroke();
+    if (big) txt(String(i || 60), cx + Math.cos(a) * R * 0.63, cy + Math.sin(a) * R * 0.63 + R * 0.05, R * 0.14, { align: "center" });
+  }
+  const hand = (s, color, len, w) => {
+    const a = s / 60 * Math.PI * 2 - Math.PI / 2;
+    ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.beginPath();
+    ctx.moveTo(cx - Math.cos(a) * R * 0.14, cy - Math.sin(a) * R * 0.14); ctx.lineTo(cx + Math.cos(a) * R * len, cy + Math.sin(a) * R * len);
+    ctx.stroke(); ctx.lineCap = "butt";
+  };
+  const pace = secs && total ? secs / (total / 100) : 0;
+  hand((secs || 0) / 60 % 60, "rgba(255,255,255,.85)", 0.55, R * 0.045); // minutes, for show
+  hand(pace % 60, "#ff3b30", 0.84, R * 0.028);
+  ctx.fillStyle = "#ff3b30"; ctx.beginPath(); ctx.arc(cx, cy, R * 0.05, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 18;
+  let y = cy + R + 165;
+  bigDistance(total, unit, cx, y, 150, accent, W - 2 * M, true);
+  y += 62;
+  const line = [secs && fmtTime(secs), pace && `${pacePer100(secs, total)} /100${unit} pace`].filter(Boolean).join("   ·   ");
+  if (line) txt(line, cx, y, 38, { weight: 600, align: "center" });
+  footer(W, H, M);
+  if (H - M - 110 - (y + 40) > 120) drawList(rows, M, y + 40, W - 2 * M, H - M - 110, accent);
+}
+
+// Boarding pass: Swimshot Air, wall to wall.
+function drawBoarding(W, H, accent, unit, { rows, total, secs, date }) {
+  const legs = rows.filter(r => !r.heading).map(r => ({ t: describe(r), v: fmtNum(r.reps * r.dist) }));
+  const pw = W - 120, px = 60, ink = "#13213a", gray = "#7b8597", MONO = '"JetBrains Mono", ui-monospace, monospace';
+  const heightAt = (s, n) => s * (120 + 250 + 270 + 80 + n * 50 + 70 + 230 + 30);
+  let s = 1, n = legs.length;
+  while (heightAt(s, n) > H - 140 && s > 0.6) s -= 0.05;
+  while (n > 1 && heightAt(s, n) > H - 140) n--;
+  const ph = heightAt(s, n), py = (H - ph) / 2, cutY = py + ph - 250 * s, r = 30 * s, notch = 30 * s;
+  const ticket = () => {
+    ctx.beginPath(); ctx.moveTo(px + r, py);
+    ctx.lineTo(px + pw - r, py); ctx.arcTo(px + pw, py, px + pw, py + r, r);
+    ctx.lineTo(px + pw, cutY - notch); ctx.arc(px + pw, cutY, notch, -Math.PI / 2, Math.PI / 2, true);
+    ctx.lineTo(px + pw, py + ph - r); ctx.arcTo(px + pw, py + ph, px + pw - r, py + ph, r);
+    ctx.lineTo(px + r, py + ph); ctx.arcTo(px, py + ph, px, py + ph - r, r);
+    ctx.lineTo(px, cutY + notch); ctx.arc(px, cutY, notch, Math.PI / 2, -Math.PI / 2, true);
+    ctx.lineTo(px, py + r); ctx.arcTo(px, py, px + r, py, r); ctx.closePath();
+  };
+  ticket(); ctx.fillStyle = "#fbfaf6"; ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.save(); ticket(); ctx.clip(); ctx.fillStyle = ink; ctx.fillRect(px, py, pw, 120 * s); ctx.restore();
+  const L = px + 50 * s, R = px + pw - 50 * s;
+  btxt("SWIMSHOT AIR", L, py + 76 * s, 40 * s, { color: "#F3EBDD" });
+  txt("BOARDING PASS", R, py + 72 * s, 24 * s, { weight: 800, color: accent === "#ffffff" ? "#F3EBDD" : accent, align: "right", spacing: 4 * s });
+  let y = py + 120 * s + 70 * s;
+  const lbl = (t, x, yy, align = "left") => txt(t, x, yy, 22 * s, { weight: 700, color: gray, align, spacing: 3 * s });
+  lbl("FROM", L, y); lbl("TO", R, y, "right");
+  btxt("WALL", L, y + 100 * s, 104 * s, { color: ink }); btxt("WALL", R, y + 100 * s, 104 * s, { color: ink, align: "right" });
+  txt("→", px + pw / 2, y + 88 * s, 80 * s, { weight: 400, color: ink, align: "center" });
+  txt("Start of lane", L, y + 145 * s, 26 * s, { weight: 400, color: gray }); txt("The other end", R, y + 145 * s, 26 * s, { weight: 400, color: gray, align: "right" });
+  y += 215 * s;
+  const fields = [["PASSENGER", f.heading.value], ["FLIGHT", `SWM${Math.round(total)}`], ["DATE", shortDate(date) || "Today"], ["GATE", "LANE 4"],
+    ["SEAT", "MIDDLE"], ["BOARDING", (sections(rows)[0]?.name || "WARMUP").toUpperCase()], ["DURATION", secs ? fmtTime(secs) : "—"],
+    ["PACE", secs && total ? `${pacePer100(secs, total)}/100` : "—"]];
+  const colW = (R - L) / 4;
+  fields.forEach(([k, v], i) => {
+    const fx = L + (i % 4) * colW, fy = y + Math.floor(i / 4) * 120 * s;
+    lbl(k, fx, fy);
+    font(36 * s, 800); txt(clip(String(v), colW - 16 * s), fx, fy + 46 * s, 36 * s, { color: ink });
+  });
+  y += 270 * s;
+  lbl("ITINERARY", L, y); y += 50 * s;
+  legs.slice(0, n).forEach((l, i) => {
+    const more = i === n - 1 && n < legs.length;
+    ctx.font = `400 ${28 * s}px ${MONO}`; ctx.fillStyle = ink; ctx.textAlign = "left";
+    const vw = ctx.measureText(l.v).width;
+    ctx.fillText(clip(more ? `+${legs.length - n + 1} more legs` : `${i + 1}  ${l.t}`, R - L - vw - 30 * s), L, y);
+    if (!more) { ctx.textAlign = "right"; ctx.fillText(l.v, R, y); }
+    y += 50 * s;
+  });
+  ctx.strokeStyle = "#c9ccd2"; ctx.lineWidth = 3 * s; ctx.setLineDash([12 * s, 10 * s]);
+  ctx.beginPath(); ctx.moveTo(px + notch + 10 * s, cutY); ctx.lineTo(px + pw - notch - 10 * s, cutY); ctx.stroke(); ctx.setLineDash([]);
+  const by = cutY + 50 * s;
+  ctx.fillStyle = ink;
+  for (let x = L, i = 0; x < L + (R - L) * 0.55; i++) { const bw = [4, 9, 3, 12, 5, 3, 7][i % 7] * s; ctx.fillRect(x, by, bw, 150 * s); x += bw + 6 * s; }
+  lbl("ZONE", R - 260 * s, by + 20 * s); btxt("DEEP END", R - 260 * s, by + 70 * s, 34 * s, { color: ink });
+  lbl("TOTAL", R - 260 * s, by + 120 * s); btxt(`${fmtNum(total)} ${unit}`, R - 260 * s, by + 168 * s, 34 * s, { color: ink });
+}
+
+// Coach texts: iMessage thread, dark mode. Older messages scroll off the top like a real chat.
+function drawTexts(W, H, accent, unit, { rows, total, secs }) {
+  const SYS = '-apple-system, "SF Pro Text", Inter, system-ui, sans-serif';
+  const replies = ["ok", "😭", "on it", "my arms", "💀", "say less", "why", "🫡", "ok coach"];
+  const msgs = [];
+  sections(rows).forEach((sec, i) => {
+    const body = sec.items.map(r => r.group
+      ? `${r.reps}x:\n${r.items.filter(it => !it.heading).map(it => "– " + setText(it)).join("\n")}`
+      : setText(r)).join("\n");
+    msgs.push({ me: false, text: (sec.name ? sec.name + ":\n" : "") + body });
+    msgs.push({ me: true, text: replies[(i + Math.round(total / 100)) % replies.length] });
+  });
+  msgs[msgs.length - 1] = { me: true, text: `done ✅ ${fmtNum(total)} ${unit}${secs ? " in " + fmtTime(secs) : ""}` };
+  msgs.push({ me: false, text: total >= 4000 ? "see you tomorrow 😈" : "more tomorrow 😈" });
+
+  if (!f.sticker.checked) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+  ctx.shadowColor = "transparent";
+  const top = 250, bottom = H - 170, size = 40, lh = 52, padX = 30, padY = 20, maxW = W * 0.68;
+  ctx.font = `400 ${size}px ${SYS}`;
+  const laid = msgs.map(m => { const lines = wrap(m.text, maxW - 2 * padX); return { ...m, lines, w: Math.max(...lines.map(l => ctx.measureText(l).width)) + 2 * padX, h: lines.length * lh + 2 * padY - (lh - size) }; });
+  ctx.save(); ctx.beginPath(); ctx.rect(0, top, W, bottom - top); ctx.clip();
+  let y = bottom - 20;
+  for (let i = laid.length - 1; i >= 0 && y > top - 400; i--) {
+    const m = laid[i];
+    y -= m.h;
+    const x = m.me ? W - 40 - m.w : 40;
+    ctx.fillStyle = m.me ? "#0a84ff" : "#26262a";
+    ctx.beginPath(); ctx.roundRect(x, y, m.w, m.h, 38); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.font = `400 ${size}px ${SYS}`;
+    m.lines.forEach((l, k) => ctx.fillText(l, x + padX, y + padY + size * 0.85 + k * lh));
+    y -= laid[i - 1] && laid[i - 1].me !== m.me ? 26 : 10;
+  }
+  ctx.restore();
+  // header: avatar + name, then the input bar
+  ctx.fillStyle = f.sticker.checked ? "rgba(0,0,0,0)" : "rgba(28,28,30,.96)"; ctx.fillRect(0, 0, W, top - 10);
+  txt("‹", 50, 150, 90, { weight: 400, color: "#0a84ff" });
+  ctx.fillStyle = "#8e8e93"; ctx.beginPath(); ctx.arc(W / 2, 110, 56, 0, Math.PI * 2); ctx.fill();
+  txt("C", W / 2, 132, 58, { weight: 600, color: "#fff", align: "center" });
+  txt("Coach ›", W / 2, 212, 30, { weight: 400, color: "#fff", align: "center" });
+  ctx.strokeStyle = "#3a3a3c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(40, H - 130, W - 170, 80, 40); ctx.stroke();
+  txt("iMessage", 80, H - 78, 34, { weight: 400, color: "#5f5f64" });
+  ctx.fillStyle = "#0a84ff"; ctx.beginPath(); ctx.arc(W - 80, H - 90, 40, 0, Math.PI * 2); ctx.fill();
+  txt("↑", W - 80, H - 74, 46, { weight: 800, color: "#fff", align: "center" });
+}
+
+// Now Swimming: music player with your photo as the cover art and your sets as the tracklist.
+function drawPlayer(W, H, accent, unit, { rows, total, secs, date }) {
+  if (!f.sticker.checked) { ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(0, 0, W, H); }
+  const M = 90, C = Math.min(W - 2 * M, H * 0.4), cx = (W - C) / 2, cy = M + 90;
+  txt("NOW SWIMMING", W / 2, M + 20, 24, { weight: 700, color: "rgba(255,255,255,.75)", align: "center", spacing: 5 });
+  txt(`from “${f.heading.value}”`, W / 2, M + 56, 26, { weight: 400, color: "rgba(255,255,255,.6)", align: "center" });
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 50; ctx.shadowOffsetY = 20;
+  ctx.fillStyle = "#000"; ctx.beginPath(); ctx.roundRect(cx, cy, C, C, 24); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.roundRect(cx, cy, C, C, 24); ctx.clip();
+  if (photo) {
+    const k = Math.max(C / photo.width, C / photo.height) * frame.zoom, w = photo.width * k, h = photo.height * k;
+    ctx.drawImage(photo, cx + Math.min(0, Math.max(C - w, C / 2 - frame.fx * w)), cy + Math.min(0, Math.max(C - h, C / 2 - frame.fy * h)), w, h);
+  } else { // generated cover
+    const g = ctx.createLinearGradient(cx, cy, cx + C, cy + C);
+    g.addColorStop(0, accent); g.addColorStop(1, "#17243A");
+    ctx.fillStyle = g; ctx.fillRect(cx, cy, C, C);
+    bfont(C * 0.2); btxt(fmtNum(total), cx + C * 0.08, cy + C * 0.86, Math.min(C * 0.24, (C * 0.84) / Math.max(3, fmtNum(total).length) * 1.45), { color: "#fff" });
+    btxt("SWIMSHOT", cx + C * 0.08, cy + C * 0.14, C * 0.06, { color: "rgba(255,255,255,.85)" });
+  }
+  ctx.restore();
+  let y = cy + C + 90;
+  bfont(52); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, y, 52);
+  txt(`${fmtNum(total)} ${unit} · ${date}`, M, y + 50, 30, { weight: 400, color: "rgba(255,255,255,.7)" });
+  y += 110;
+  ctx.fillStyle = "rgba(255,255,255,.25)"; ctx.fillRect(M, y, W - 2 * M, 8);
+  ctx.fillStyle = "#fff"; ctx.fillRect(M, y, (W - 2 * M) * 0.985, 8);
+  ctx.beginPath(); ctx.arc(M + (W - 2 * M) * 0.985, y + 4, 14, 0, Math.PI * 2); ctx.fill();
+  txt(secs ? fmtTime(secs) : "0:00", M, y + 52, 24, { weight: 600, color: "rgba(255,255,255,.7)" });
+  txt("-0:00", W - M, y + 52, 24, { weight: 600, color: "rgba(255,255,255,.7)", align: "right" });
+  y += 130;
+  ctx.fillStyle = "#fff"; // ⏮  ⏸  ⏭
+  const tri = (x, dir, s) => { ctx.beginPath(); ctx.moveTo(x, y - s); ctx.lineTo(x + dir * s * 1.4, y); ctx.lineTo(x, y + s); ctx.closePath(); ctx.fill(); };
+  tri(W / 2 - 170, -1, 26); tri(W / 2 - 206, -1, 26); ctx.fillRect(W / 2 - 252, y - 26, 8, 52);
+  ctx.fillRect(W / 2 - 26, y - 38, 18, 76); ctx.fillRect(W / 2 + 8, y - 38, 18, 76);
+  tri(W / 2 + 170, 1, 26); tri(W / 2 + 206, 1, 26); ctx.fillRect(W / 2 + 244, y - 26, 8, 52);
+  y += 100;
+  const tracks = rows.filter(r => !r.heading), room = Math.floor((H - M - 70 - y) / 54);
+  if (room >= 2 && tracks.length) {
+    txt("UP NEXT", M, y, 24, { weight: 700, color: "rgba(255,255,255,.6)", spacing: 4 }); y += 54;
+    const shown = tracks.slice(0, tracks.length > room - 1 ? room - 2 : room - 1);
+    shown.forEach((r, i) => {
+      txt(String(i + 1), M, y, 30, { weight: 400, color: "rgba(255,255,255,.5)" });
+      const v = fmtNum(r.reps * r.dist); font(30, 600); const vw = ctx.measureText(v).width;
+      font(30, 600); txt(clip(describe(r), W - 2 * M - 70 - vw - 20), M + 60, y, 30, { weight: 600 });
+      txt(v, W - M, y, 30, { weight: 400, color: "rgba(255,255,255,.6)", align: "right" });
+      y += 54;
+    });
+    if (shown.length < tracks.length) txt(`+${tracks.length - shown.length} more`, M + 60, y, 26, { weight: 400, color: "rgba(255,255,255,.5)" });
+  }
+}
+
+// Heat sheet: a printed meet program. Sections are heats, sets are lanes; seed = your interval or NT.
+function drawHeats(W, H, accent, unit, { rows, total, secs, date }) {
+  const secs_ = sections(rows), lines = [];
+  lines.push(["c", "SWIMSHOT MEET MANAGER 1.0", true], ["c", `${f.heading.value} - ${shortDate(date)}`], ["c", "Heat Sheet", true], [""],
+             ["l", `Event 1  ${fmtNum(total)} ${unit === "yd" ? "Yard" : "Meter"} Workout`, true], [""]);
+  secs_.forEach((sec, i) => {
+    lines.push(["l", `Heat ${i + 1} of ${secs_.length}  ${sec.name || "Timed Finals"}`, true], ["hdr"]);
+    let lane = 0;
+    for (const r of sec.items) {
+      if (r.group) for (const it of r.items.filter(x => !x.heading)) lines.push(["lane", ++lane, `${setText(it)} x${r.reps}`, interval(it.label) || "NT"]);
+      else lines.push(["lane", ++lane, setText(r), interval(r.label) || "NT"]);
+    }
+    lines.push([""]);
+  });
+  lines.push(["-"], ["lr", "Total", `${fmtNum(total)} ${unit}`, true]);
+  if (secs) lines.push(["lr", "Time", fmtTime(secs)], ["lr", "Pace/100", pacePer100(secs, total)]);
+  const px = 50, pw = W - 100, MONO = '"JetBrains Mono", ui-monospace, monospace', ink = "#1b1b1b";
+  let size = 32;
+  while (size > 18 && lines.length * size * 1.45 + 120 > H - 100) size -= 1;
+  const lh = size * 1.45, maxLines = Math.floor((H - 100 - 120) / lh);
+  const shown = lines.length > maxLines ? [...lines.slice(0, maxLines - 1), ["l", `... ${lines.length - maxLines + 1} more lines`]] : lines;
+  const ph = shown.length * lh + 120, py = (H - ph) / 2;
+  ctx.fillStyle = "#fdfdfb"; ctx.fillRect(px, py, pw, ph);
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = "rgba(0,0,0,.04)"; // tractor-feed holes down both edges
+  for (let y = py + 30; y < py + ph - 20; y += 60) { ctx.beginPath(); ctx.arc(px + 22, y, 9, 0, 7); ctx.arc(px + pw - 22, y, 9, 0, 7); ctx.fill(); }
+  const L = px + 60, R = px + pw - 60, mono = b => (ctx.font = `${b ? 700 : 400} ${size}px ${MONO}`);
+  let y = py + 60 + size;
+  for (const [kind, a, b, c] of shown) {
+    ctx.fillStyle = ink; ctx.textAlign = "left";
+    if (kind === "c") { mono(b); ctx.textAlign = "center"; ctx.fillText(clip(a, R - L), W / 2, y); }
+    else if (kind === "l") { mono(b); ctx.fillText(clip(a, R - L), L, y); }
+    else if (kind === "hdr") {
+      mono(false); ctx.fillText("Lane  Set", L, y); ctx.textAlign = "right"; ctx.fillText("Seed Time", R, y);
+      ctx.fillRect(L, y + size * 0.3, R - L, 2);
+    } else if (kind === "lane") {
+      mono(false); const sw = ctx.measureText("Seed Time").width;
+      ctx.fillText(`${String(a).padStart(4)}  ${clip(b, R - L - sw - size * 7)}`, L, y);
+      ctx.textAlign = "right"; ctx.fillText(c, R, y);
+    } else if (kind === "-") { mono(false); ctx.fillText("=".repeat(Math.floor((R - L) / ctx.measureText("=").width)), L, y); }
+    else if (kind === "lr") { mono(c); ctx.fillText(a, L, y); ctx.textAlign = "right"; ctx.fillText(b, R, y); }
+    y += lh;
+  }
+}
+
+// Front page: The Swimshot Times. Headline, B&W photo, and an article written from your sets.
+function drawNews(W, H, accent, unit, { rows, total, secs, date }) {
+  const ink = "#1a1a1a", SERIF = '"Playfair Display", Georgia, serif', BODY = 'Georgia, "Times New Roman", serif', FRAK = '"UnifrakturMaguntia", "Playfair Display", serif';
+  const px = f.sticker.checked ? 40 : 0, py = f.sticker.checked ? 40 : 0, pw = W - 2 * px, phh = H - 2 * py;
+  ctx.fillStyle = "#f2ede2"; ctx.fillRect(px, py, pw, phh);
+  ctx.shadowColor = "transparent";
+  const M = px + 60, R = px + pw - 60, CW = R - M;
+  let y = py + 140;
+  let mast = 116; ctx.font = `400 ${mast}px ${FRAK}`;
+  while (ctx.measureText("The Swimshot Times").width > CW && mast > 40) { mast -= 4; ctx.font = `400 ${mast}px ${FRAK}`; }
+  ctx.fillStyle = ink; ctx.textAlign = "center"; ctx.fillText("The Swimshot Times", W / 2, y);
+  y += 34; ctx.fillRect(M, y, CW, 6); ctx.fillRect(M, y + 12, CW, 2);
+  y += 52;
+  const small = (t, x, align) => { ctx.font = `700 22px ${BODY}`; ctx.textAlign = align; ctx.fillText(t, x, y); };
+  small(date.toUpperCase(), M, "left"); small(`VOL. I · NO. ${Math.round(total)}`, W / 2, "center"); small("PRICE: ONE WARMUP", R, "right");
+  y += 20; ctx.fillRect(M, y, CW, 2);
+  const verb = total >= 5000 ? "DEMOLISHES" : total >= 3000 ? "CONQUERS" : "SURVIVES";
+  const quote = ["brutal", "relentless", "frankly unnecessary", "a lot", "character-building"][Math.round(total / 100) % 5];
+  let hs = 96; ctx.font = `900 ${hs}px ${SERIF}`;
+  let head = wrap(`LOCAL SWIMMER ${verb} ${fmtNum(total)} ${unitWord(unit).toUpperCase()}`, CW);
+  while (head.length > 3 && hs > 50) { hs -= 6; ctx.font = `900 ${hs}px ${SERIF}`; head = wrap(`LOCAL SWIMMER ${verb} ${fmtNum(total)} ${unitWord(unit).toUpperCase()}`, CW); }
+  y += hs + 20; ctx.textAlign = "center";
+  head.forEach(l => { ctx.fillText(l, W / 2, y); y += hs * 1.02; });
+  const pace = secs && total ? pacePer100(secs, total) : "";
+  ctx.font = `italic 400 36px ${SERIF}`;
+  const sub = wrap(secs ? `Finishes in ${fmtTime(secs)} at a ${pace} pace; witnesses call main set “${quote}”` : `Witnesses call main set “${quote}”`, CW - 60);
+  y += 6; sub.forEach(l => { ctx.fillText(l, W / 2, y); y += 46; });
+  y += 10; ctx.fillRect(M, y, CW, 2); y += 30;
+  if (photo && H > 1400) {
+    const ph = Math.min(H * 0.26, 520), k = Math.max(CW / photo.width, ph / photo.height), w = photo.width * k, h = photo.height * k;
+    ctx.save(); ctx.beginPath(); ctx.rect(M, y, CW, ph); ctx.clip();
+    if ("filter" in ctx) ctx.filter = "grayscale(1) contrast(1.15)";
+    ctx.drawImage(photo, M + (CW - w) / 2, y + (ph - h) / 2, w, h); ctx.filter = "none"; ctx.restore();
+    y += ph + 34; ctx.font = `italic 400 24px ${BODY}`; ctx.textAlign = "left"; ctx.fillText("The swimmer, moments before the main set.", M, y); y += 30;
+  }
+  // article from the actual sets
+  const list = items => { const t = items.map(r => r.group ? `${r.reps} rounds of ${r.items.filter(i => !i.heading).map(setText).join(", ")}` : setText(r)); return t.length > 1 ? t.slice(0, -1).join(", ") + " and " + t.at(-1) : t[0]; };
+  const story = [`LANE 4 — It was, by all accounts, a ${verb === "SURVIVES" ? "respectable" : "serious"} day at the pool.`,
+    ...sections(rows).map(s => `The ${s.name ? s.name.toLowerCase() : "session"} featured ${list(s.items)}.`),
+    `In all, the swimmer covered ${fmtNum(total)} ${unitWord(unit)}${secs ? ` in ${fmtTime(secs)}, averaging ${pace} per 100` : ""}.`,
+    `“I'll be back tomorrow,” the swimmer told reporters, before asking about the 6 a.m. lane.`].join(" ");
+  // body size: the largest that fits in two columns; columns balanced
+  const gap = 40, colW = (CW - gap) / 2, top = y + 30, bottom = py + phh - 90;
+  let bs = 40, blh, words, per;
+  for (;; bs -= 2) {
+    ctx.font = `400 ${bs}px ${BODY}`; blh = bs * 1.38; words = wrap(story, colW); per = Math.floor((bottom - top) / blh);
+    if (words.length <= 2 * per || bs <= 24) break;
+  }
+  if (words.length <= 2 * per) per = Math.ceil(words.length / 2);
+  ctx.textAlign = "left";
+  for (let c = 0; c < 2; c++) {
+    const col = words.slice(c * per, (c + 1) * per);
+    if (c === 1 && words.length > 2 * per && col.length) col[col.length - 1] = col.at(-1).replace(/\s*\S*$/, " …");
+    col.forEach((l, k) => ctx.fillText(l, M + c * (colW + gap), top + k * blh));
+  }
+  if (per > 0) { ctx.fillRect(M + colW + gap / 2 - 1, top - bs * 0.8, 2, Math.min(per, words.length) * blh); }
+  const boxTop = top + Math.min(per, words.length) * blh + 30, boxH = 230;
+  if (bottom - boxTop > boxH + 20) { // spare room: a "by the numbers" sidebar
+    const by = boxTop + (bottom - boxTop - boxH) / 2;
+    ctx.fillRect(M, by, CW, 4); ctx.fillRect(M, by + boxH, CW, 4);
+    ctx.font = `700 24px ${BODY}`; ctx.textAlign = "center"; ctx.fillText("BY THE NUMBERS", W / 2, by + 50);
+    const stats = [[fmtNum(total), unitWord(unit)], ...(secs ? [[fmtTime(secs), "on the clock"], [pacePer100(secs, total), "per 100"]] : [])];
+    stats.forEach(([v, k], i) => {
+      const x = M + CW * (i + 0.5) / stats.length;
+      ctx.font = `900 64px ${SERIF}`; ctx.fillText(v, x, by + 140);
+      ctx.font = `italic 400 26px ${SERIF}`; ctx.fillText(k, x, by + 186);
+    });
+  }
+  ctx.font = `italic 400 22px ${BODY}`; ctx.textAlign = "center";
+  ctx.fillText("Continued on page A4  ·  Swimshot by Swim House Mafia", W / 2, py + phh - 46);
+}
+
 // Paper receipt: one line item per set, totals at the bottom.
 function drawReceipt(W, H, accent, unit, { rows, total, secs, date }) {
   const lines = [["c", "SWIMSHOT", true], ["c", "by Swim House Mafia"], ["c", f.heading.value.toUpperCase()], ["c", date], ["-"]];
@@ -823,8 +1160,9 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 
 
 // ---- looks (carousel slides) ----
-const LOOKS = [["full", "Classic"], ["receipt", "Receipt"], ["whiteboard", "Whiteboard"], ["scoreboard", "Scoreboard"],
-               ["facts", "Workout Facts"], ["bars", "Bars"], ["poster", "Poster"], ["minimal", "Minimal"]];
+const LOOKS = [["full", "Classic"], ["receipt", "Receipt"], ["texts", "Coach Texts"], ["whiteboard", "Whiteboard"],
+               ["boarding", "Boarding Pass"], ["clock", "Pace Clock"], ["scoreboard", "Scoreboard"], ["player", "Now Swimming"],
+               ["facts", "Workout Facts"], ["heats", "Heat Sheet"], ["news", "Front Page"], ["bars", "Bars"], ["poster", "Poster"], ["minimal", "Minimal"]];
 const slides = () => [...LOOKS.map(([layout, name]) => ({ layout, name })),
   ...(form ? [["year", "Your year"], ["alltime", "All time"], ["week", "This week"]].map(([period, name]) => ({ period, name, stats: true })) : [])];
 let list = [], full = [], idx = 0, renderId = 0;
@@ -1203,7 +1541,8 @@ renderAll(); renderFan();
 
 fetch("/api/form").then(r => r.ok ? r.json() : Promise.reject()).then(d => { form = d; buildCarousel(); renderAll(); }).catch(() => {});
 Promise.all([logoReady, ...["800 64px Inter", "400 46px Inter", "600 34px Inter", "900 90px Inter", "700 34px \"JetBrains Mono\"",
-  "400 34px \"JetBrains Mono\"", "400 50px \"Permanent Marker\"", "400 50px VT323", "900 expanded 64px Archivo", "800 expanded 64px Archivo"]
+  "400 34px \"JetBrains Mono\"", "400 50px \"Permanent Marker\"", "400 50px VT323", "900 expanded 64px Archivo", "800 expanded 64px Archivo",
+  "900 90px \"Playfair Display\"", "italic 400 36px \"Playfair Display\"", "400 100px UnifrakturMaguntia"]
   .map(s => document.fonts.load(s).catch(() => {}))])
   .then(() => { renderAll(); renderFan(); });
 </script>
