@@ -118,6 +118,21 @@
   .tag { color:var(--muted); margin:14px 0 22px; font-size:16px; animation:fadeup .6s .34s var(--spring) both; }
   .home .btn { width:100%; justify-content:center; height:54px; font-size:17px; animation:fadeup .6s .4s var(--spring) both; }
   .home .btn + .btn { margin-top:10px; }
+  .home .btn svg { width:22px; height:22px; stroke-width:3; }
+  .streak { margin:-10px 0 16px; font-weight:800; font-size:15px; animation:fadeup .6s .37s var(--spring) both; }
+  /* quick log sheet */
+  .quick { text-align:center; }
+  .bigdist { display:flex; align-items:baseline; justify-content:center; gap:10px; margin:6px 0 14px; }
+  .bigdist input { width:5.2ch; background:none; border:0; border-bottom:3px solid var(--line); color:var(--text); text-align:center;
+                   font:900 56px/1.1 var(--brand); font-stretch:125%; padding:0 0 4px; outline:none; }
+  .bigdist input:focus { border-color:var(--accent); }
+  .unitbtn { border:0; background:var(--panel2); color:var(--text); border-radius:999px; padding:8px 14px; font-weight:800; font-size:16px; }
+  .qchips { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-bottom:16px; }
+  .qchips button { border:0; background:var(--panel2); color:var(--text); border-radius:999px; padding:9px 14px; font-weight:700; font-size:15px; }
+  .qchips button:active { transform:scale(.94); }
+  .qtime { justify-content:center; margin:0 auto 16px; width:fit-content; }
+  .qtime input { width:11em; }
+  .linkish.wide { display:block; width:100%; text-align:center; }
   @keyframes fadeup { from { opacity:0; transform:translateY(14px); } }
   .wm { border:0; background:none; padding:4px 6px; font:900 17px/1 var(--brand); font-stretch:125%; letter-spacing:.01em; color:var(--text); }
 
@@ -230,8 +245,10 @@
     <div class="fan" aria-hidden="true"><img alt=""><img alt=""><img alt=""></div>
     <div class="wordmark">SWIMSHOT</div>
     <div class="by">by <img src="brand/shm.svg" alt="Swim House Mafia"></div>
-    <p class="tag">Write the set. Post the swim.</p>
-    <button type="button" class="btn primary" id="newBtn">New workout</button>
+    <p class="tag">Swam today? Prove it.</p>
+    <p class="streak" id="streak" hidden></p>
+    <button type="button" class="btn primary" id="newBtn">
+      <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>I swam today</button>
     <button type="button" class="btn quiet" id="continueBtn" hidden></button>
   </section>
 
@@ -281,6 +298,17 @@
   <div class="field"><label class="toggle">Transparent sticker <input type="checkbox" name="sticker"></label>
     <span class="lbl" style="margin:6px 0 0;font-weight:400">No background or photo, for laying the card over your own story.</span></div>
   <button type="button" class="btn primary wide" data-close>Done</button>
+</dialog>
+
+<dialog id="quickSheet" class="quick" aria-label="Log today's swim" tabindex="-1">
+  <div class="grip"></div>
+  <h2>Nice. How far?</h2>
+  <div class="bigdist"><input id="qDist" inputmode="numeric" autocomplete="off" placeholder="2,000" aria-label="Distance">
+    <button type="button" id="qUnit" class="unitbtn" aria-label="Switch yards or meters">yd</button></div>
+  <div class="qchips" id="qChips"></div>
+  <label class="pill qtime">Time <input id="qTime" inputmode="numeric" autocomplete="off" placeholder="optional, like 4830" aria-label="Time, optional"></label>
+  <button type="button" class="btn primary wide" id="qMake">Make my card</button>
+  <button type="button" class="linkish wide" id="qSets">Add my sets instead</button>
 </dialog>
 
 <dialog id="helpSheet" class="help" aria-label="How to write a workout" tabindex="-1">
@@ -427,7 +455,7 @@ function drawWorkout(W, H, accent, unit) {
   bfont(56); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 56);
   txt(date, M, M + 120, 34, { weight: 600, color: "rgba(255,255,255,.8)" });
 
-  footer(W, H, M);
+  footer(W, H, M, streakBadge());
   let y = H - M - 90;
   const stats = [secs && { label: "Time", value: fmtTime(secs) }, secs && total && { label: `Pace /100${unit}`, value: pacePer100(secs, total) }].filter(Boolean);
   if (stats.length) { statRow(stats, M, y, W - 2 * M); y -= 150; }
@@ -436,6 +464,7 @@ function drawWorkout(W, H, accent, unit) {
   const top = M + 170, bottom = y - big - 40;
   if (cur.layout === "bars") return drawBars(rows, M, top, W - 2 * M, bottom, accent);
   if (cur.layout !== "full" || !rows.length) return;
+  if (rows.length === 1 && !rows[0].group && rows[0].reps === 1) return; // a quick log: the big number says it all
 
   drawList(rows, M, top, W - 2 * M, bottom, accent);
 }
@@ -554,6 +583,8 @@ function drawPoster(W, H, accent, unit, { total, secs, date }) {
   bigDistance(total, unit, cx, mid + 60, 300, accent, W - 120, true);
   const line = [secs && fmtTime(secs), secs && total && `${pacePer100(secs, total)} /100${unit}`].filter(Boolean).join("   ·   ");
   if (line) txt(line, cx, mid + 170, 48, { weight: 600, align: "center" });
+  const badge = streakBadge();
+  if (badge) txt(badge, cx, mid + 250, 38, { weight: 800, color: accent, align: "center", spacing: 2 });
   wordmark(cx, H - 80, "center");
 }
 
@@ -738,6 +769,27 @@ function drawFacts(W, H, unit, { rows, total, secs, date }) {
   ft("source of rest. Contains chlorine.", L, y + 32 * s, 24 * s, ink, I);
   ft("Distributed by Swim House Mafia.", L, y + 64 * s, 24 * s, ink, I, { weight: 800 });
 }
+
+// ---- swim days: which days you logged a swim (this device only), for streaks ----
+let swimDays = [];
+try { swimDays = JSON.parse(localStorage.getItem("swimshot.days") || "[]"); } catch {}
+function localDay(offset = 0) { // "YYYY-MM-DD" in local time, `offset` days from today
+  const d = new Date(); d.setDate(d.getDate() + offset);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+}
+function markSwim(day = localDay()) {
+  if (swimDays.includes(day)) return;
+  swimDays.push(day); swimDays.sort();
+  try { localStorage.setItem("swimshot.days", JSON.stringify(swimDays)); } catch {}
+}
+function streak() { // consecutive days ending today, or yesterday if today isn't logged yet
+  const has = new Set(swimDays);
+  let d = has.has(localDay()) ? 0 : -1, n = 0;
+  while (has.has(localDay(d))) { n++; d--; }
+  return n;
+}
+const weekCount = () => [0, -1, -2, -3, -4, -5, -6].filter(o => swimDays.includes(localDay(o))).length;
+const streakBadge = () => { const n = streak(); return n >= 2 ? `🔥 DAY ${n}` : ""; };
 
 // ---- shared helpers for the newer cards ----
 function wrap(s, maxW) { // word-wrap with the current ctx.font
@@ -1311,7 +1363,7 @@ document.querySelectorAll("[data-ins]").forEach(b => {
 });
 
 function changed() { summarize(); persist(); renderSoon(); }
-f.addEventListener("input", e => { if (e.target.name !== "photo" && !e.target.closest("#adjust")) changed(); });
+f.addEventListener("input", e => { if (e.target.name !== "photo" && !e.target.closest("#adjust, #quickSheet")) changed(); });
 
 // Keep the sheet above the iPhone keyboard: size the app to the visible viewport.
 if (window.visualViewport) {
@@ -1461,6 +1513,7 @@ const fileName = i => `swimshot-${f.date.value || "card"}-${list[i].layout || li
 // press-and-hold → "Save to Photos" puts the card straight in the camera roll.
 async function share() {
   if (!summarize() && !list[idx]?.stats) return openSheet(true);
+  if (!list[idx]?.stats && f.date.value) markSwim(f.date.value);
   const i = idx, blob = full[i] || await renderFull(i); // usually ready already, so the tap still counts as a tap
   if (canShareFiles) {
     try { return await navigator.share({ files: [new File([blob], fileName(i), { type: "image/png" })] }); }
@@ -1519,17 +1572,40 @@ function showHome(show = true) {
   $("home").classList.toggle("gone", !show);
   $("home").inert = !show; app.querySelectorAll(".stage, .sheet").forEach(el => el.inert = show);
   if (show) {
+    const n = streak(), w = weekCount(), today = swimDays.includes(localDay());
+    const bits = [n >= 2 ? `🔥 ${n}-day streak` : today ? "✓ Logged today" : "", w ? `${w} swim${w === 1 ? "" : "s"} this week` : ""].filter(Boolean);
+    $("streak").hidden = !bits.length; $("streak").textContent = bits.join(" · ");
     const total = summarize();
     $("continueBtn").hidden = !total;
     $("continueBtn").textContent = `Continue · ${fmtNum(total)} ${f.unit.value} · ${f.heading.value}`;
   }
 }
-$("newBtn").onclick = () => {
-  const hr = new Date().getHours();
-  f.heading.value = `${hr < 11 ? "Morning" : hr < 15 ? "Lunch" : hr < 21 ? "Evening" : "Night"} Swim`;
-  f.sets.value = ""; f.time.value = "";
+const timeOfDayTitle = () => { const hr = new Date().getHours(); return `${hr < 11 ? "Morning" : hr < 15 ? "Lunch" : hr < 21 ? "Evening" : "Night"} Swim`; };
+function freshWorkout(sets = "", time = "") {
+  f.heading.value = timeOfDayTitle(); f.sets.value = sets; f.time.value = time;
   f.date.valueAsDate = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4);
-  changed(); showHome(false); openSheet(true);
+  changed();
+}
+// "I swam today": distance (+ optional time) -> straight to the cards. Sets are optional.
+const QUICK = [1000, 1500, 2000, 2500, 3000, 4000, 5000];
+$("qChips").innerHTML = QUICK.map(d => `<button type="button" data-d="${d}">${fmtNum(d)}</button>`).join("");
+$("qChips").onclick = e => { const d = e.target.dataset.d; if (d) { $("qDist").value = fmtNum(+d); $("qDist").focus(); } };
+$("qUnit").onclick = () => { f.unit.value = f.unit.value === "yd" ? "m" : "yd"; $("qUnit").textContent = f.unit.value; persist(); };
+$("newBtn").onclick = () => {
+  $("qDist").value = ""; $("qTime").value = ""; $("qUnit").textContent = f.unit.value;
+  $("quickSheet").showModal(); $("qDist").focus();
+};
+$("qMake").onclick = () => {
+  const dist = parseInt($("qDist").value.replace(/\D/g, ""), 10);
+  if (!dist) { $("qDist").focus(); $("qDist").animate([{ transform: "translateX(-8px)" }, { transform: "translateX(8px)" }, { transform: "none" }], 240); return; }
+  freshWorkout(`${dist} swim`, $("qTime").value);
+  markSwim();
+  $("quickSheet").close(); showHome(false); openSheet(false);
+};
+$("qSets").onclick = () => {
+  const dist = parseInt($("qDist").value.replace(/\D/g, ""), 10);
+  freshWorkout(dist ? `${dist} swim\n` : "", $("qTime").value);
+  $("quickSheet").close(); showHome(false); openSheet(true);
 };
 $("continueBtn").onclick = () => showHome(false);
 $("homeLogo").onclick = () => { openSheet(false); showHome(true); };
