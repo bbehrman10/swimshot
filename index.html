@@ -805,7 +805,7 @@ function wrap(s, maxW) { // word-wrap with the current ctx.font
   return lines;
 }
 const setText = r => plain(`${setStr(r)} ${r.label}`.trim());
-const describe = r => r.group ? `${r.reps}x (${r.items.filter(i => !i.heading).map(setText).join(", ")})` : setText(r);
+const describe = r => r.group ? `${r.reps}x${r.label ? " " + r.label : ""} (${r.items.filter(i => !i.heading).map(setText).join(", ")})` : setText(r);
 const interval = s => (s.match(/@\s*(\d{1,2}:\d{2})/) || [])[1];
 const unitWord = unit => unit === "yd" ? "yards" : "meters";
 function sections(rows) { // [{name, items}] — sets before any heading land in a nameless section
@@ -920,7 +920,7 @@ function drawTexts(W, H, accent, unit, { rows, total, secs }) {
   const msgs = [];
   sections(rows).forEach((sec, i) => {
     const body = sec.items.map(r => r.group
-      ? `${r.reps}x:\n${r.items.filter(it => !it.heading).map(it => "– " + setText(it)).join("\n")}`
+      ? `${r.reps}x${r.label ? " " + r.label : ""}:\n${r.items.filter(it => !it.heading).map(it => "– " + setText(it)).join("\n")}`
       : setText(r)).join("\n");
     msgs.push({ me: false, text: (sec.name ? sec.name + ":\n" : "") + body });
     msgs.push({ me: true, text: replies[(i + Math.round(total / 100)) % replies.length] });
@@ -1383,7 +1383,7 @@ $("helpBtn").onclick = () => openDialog("helpSheet");
 document.querySelectorAll("dialog").forEach(d =>
   d.addEventListener("click", e => { if (e.target === d || e.target.matches("[data-close]")) d.close(); }));
 $("example").onclick = () => {
-  f.sets.value = "Warmup\n400 swim\n4x50 kick @1:00\nMain\n3x\n- 100 free @1:30\n- 2x50 fly\n- 100 IM\n6x50 descend 1-3\nCooldown\n200 easy";
+  f.sets.value = "Main\n3x\n- 2x200 Free easy\n- 4x100 Free medium\n- 4x50 Free fast\nGrind\n2x\n- 2x50 Free fast\n- 1x100 Free fast\n3x all out\n- 2x50 Fly  \n- 2x50 Free\nCooldown\n300 Pull easy";
   $("helpSheet").close(); changed();
 };
 // ---- photo: pick, then frame it (drag to move, pinch/scroll/slider to zoom) ----
@@ -1558,8 +1558,8 @@ if (!f.heading.value) { const hr = new Date().getHours();
   f.heading.value = `${hr < 11 ? "Morning" : hr < 15 ? "Lunch" : hr < 21 ? "Evening" : "Night"} Swim`; }
 
 // ---- title screen ----
-const DEMO = { heading: "Morning Swim", time: "4830",
-  sets: "Warmup\n400 swim\n4x50 kick\nMain\n3x\n- 100 free @1:30\n- 2x50 fly\n- 100 IM\nCooldown\n200 easy" };
+const DEMO = { heading: "Morning Swim", time: "1:15:00",
+  sets: "Main\n3x\n- 2x200 Free easy\n- 4x100 Free medium\n- 4x50 Free fast\nGrind\n2x\n- 2x50 Free fast\n- 1x100 Free fast\n3x all out\n- 2x50 Fly  \n- 2x50 Free\nCooldown\n300 Pull easy" };
 // Sample cards from a demo workout: swap the inputs in, draw (synchronous), swap back.
 async function renderFan() {
   const keep = { heading: f.heading.value, time: f.time.value, sets: f.sets.value, sticker: f.sticker.checked, size: f.size.value, photo };
