@@ -468,7 +468,8 @@ function drawWorkout(W, H, accent, unit) {
   if (cur.layout === "whiteboard") return drawWhiteboard(W, H, unit, w);
   if (cur.layout === "scoreboard") return drawScoreboard(W, H, unit, w);
   if (cur.layout === "facts") return drawFacts(W, H, unit, w);
-  const fun = { clock: drawClock, boarding: drawBoarding, texts: drawTexts, player: drawPlayer, heats: drawHeats, news: drawNews }[cur.layout];
+  const fun = { clock: drawClock, boarding: drawBoarding, texts: drawTexts, player: drawPlayer, heats: drawHeats, news: drawNews,
+    sticker: drawSticker, departures: drawDepartures, polaroid: drawPolaroid, lane: drawLaneLine, week: drawWeek }[cur.layout];
   if (fun) return fun(W, H, accent, unit, w);
   part("head", M, M, () => {
     bfont(56); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 56);
@@ -799,11 +800,16 @@ function localDay(offset = 0) { // "YYYY-MM-DD" in local time, `offset` days fro
   const d = new Date(); d.setDate(d.getDate() + offset);
   return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 }
-function markSwim(day = localDay()) {
+// Per-day distance/time for the Week Recap, also this device only. Latest card for a day wins.
+let swimLog = {};
+try { swimLog = JSON.parse(localStorage.getItem("swimshot.log") || "{}"); } catch {}
+function markSwim(day = localDay(), entry) {
+  if (entry) { swimLog[day] = entry; try { localStorage.setItem("swimshot.log", JSON.stringify(swimLog)); } catch {} }
   if (swimDays.includes(day)) return;
   swimDays.push(day); swimDays.sort();
   try { localStorage.setItem("swimshot.days", JSON.stringify(swimDays)); } catch {}
 }
+const currentEntry = () => ({ dist: parseSets(f.sets.value).total, unit: f.unit.value, secs: parseTime(f.time.value) });
 function streak() { // consecutive days ending today, or yesterday if today isn't logged yet
   const has = new Set(swimDays);
   let d = has.has(localDay()) ? 0 : -1, n = 0;
@@ -1148,6 +1154,170 @@ function drawNews(W, H, accent, unit, { rows, total, secs, date }) {
   ctx.fillText("Continued on page A4  ·  Swimshot by Swim House Mafia", W / 2, py + phh - 46);
 }
 
+// Stats sticker: one compact panel. Move/resize it with Adjust > Text.
+function drawSticker(W, H, accent, unit, { total, secs, date }) {
+  const pw = 640, ph = secs ? 330 : 250, px = (W - pw) / 2, py = H * 0.62;
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12;
+  ctx.fillStyle = "rgba(12,19,32,.72)"; ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 36); ctx.fill(); ctx.restore();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "rgba(255,255,255,.14)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 36); ctx.stroke();
+  const L = px + 44;
+  txt(`${f.heading.value.toUpperCase()} · ${shortDate(date).toUpperCase()}`, L, py + 62, 24, { weight: 700, color: "rgba(255,255,255,.65)", spacing: 3 });
+  bigDistance(total, unit, L, py + 182, 120, accent, pw - 88);
+  if (secs) {
+    txt(fmtTime(secs), L, py + 262, 44, { color: "#fff" });
+    font(44); const tw = ctx.measureText(fmtTime(secs)).width;
+    txt(`${pacePer100(secs, total)} /100${unit}`, L + tw + 40, py + 262, 44, { weight: 600, color: "rgba(255,255,255,.75)" });
+  }
+  btxt("SWIMSHOT", px + pw - 44, py + ph - 30, 20, { color: "rgba(243,235,221,.55)", align: "right" });
+}
+
+// Departures board: split-flap tiles. Each set is a "flight"; status from how it was swum.
+function drawDepartures(W, H, accent, unit, { rows, total, secs }) {
+  const secOf = new Map(); sections(rows).forEach(s => s.items.forEach(r => secOf.set(r, s.name)));
+  const sets = rows.filter(r => !r.heading).map(r => {
+    const lab = ((r.group ? r.label : r.label) || "").toLowerCase() + " " + (r.group ? r.items.map(i => i.label || "").join(" ").toLowerCase() : "");
+    const st = /all out|sprint|max/.test(lab) ? ["ALL OUT", "#ff4b3e"] : /fast|race/.test(lab) ? ["FAST", "#ffb627"] : /easy|cool|recover/.test(lab) ? ["CRUISING", "#7fd3ff"] : ["COMPLETED", "#46d37a"];
+    const name = (r.group ? (r.label ? `${r.reps}X ${r.label}` : `${secOf.get(r) || "ROUND"} ${r.reps}X`) : plain(setText(r))).toUpperCase();
+    return { name, yd: String(r.reps * r.dist), st };
+  });
+  const bx = 50, bw = W - 100, cols = 26, tile = Math.floor((bw - 80) / cols), th = tile * 1.35; // 12 set + 4 yd + 8 status + gaps
+  const rowsFit = Math.min(sets.length, Math.floor((H - 760) / (th + 14)));
+  const shown = sets.slice(0, rowsFit), bh = 250 + shown.length * (th + 14) + (secs ? 250 : 160), by = (H - bh) / 2;
+  ctx.fillStyle = "#111214"; ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 18); ctx.fill();
+  ctx.shadowColor = "transparent";
+  const L = bx + 40;
+  txt("DEPARTURES", L, by + 92, 64, { weight: 800, color: "#ffd23f", spacing: 4 });
+  txt("✈", bx + bw - 40, by + 92, 60, { weight: 400, color: "#ffd23f", align: "right" });
+  txt(`LANE 4 · ${f.heading.value.toUpperCase()}`, L, by + 140, 26, { weight: 700, color: "rgba(255,255,255,.55)", spacing: 3 });
+  const MONO = '"JetBrains Mono", ui-monospace, monospace';
+  const flap = (s, x, y, n, color = "#f2f2f2") => {
+    for (let i = 0; i < n; i++) {
+      const cx = x + i * tile;
+      ctx.fillStyle = "#1e2024"; ctx.fillRect(cx + 1, y, tile - 2, th);
+      ctx.fillStyle = "#000"; ctx.fillRect(cx + 1, y + th / 2 - 1, tile - 2, 2);
+      const ch = s[i] || ""; if (!ch.trim()) continue;
+      ctx.font = `700 ${tile * 0.9}px ${MONO}`; ctx.fillStyle = color; ctx.textAlign = "center";
+      ctx.fillText(ch, cx + tile / 2, y + th * 0.72);
+    }
+  };
+  let y = by + 200;
+  txt("SET", L, y, 22, { weight: 700, color: "rgba(255,255,255,.5)", spacing: 3 });
+  txt(unit.toUpperCase(), L + tile * 13, y, 22, { weight: 700, color: "rgba(255,255,255,.5)", spacing: 3 });
+  txt("STATUS", L + tile * 18, y, 22, { weight: 700, color: "rgba(255,255,255,.5)", spacing: 3 });
+  y += 26;
+  for (const s of shown) {
+    flap(s.name.slice(0, 12), L, y, 12);
+    flap(s.yd.padStart(4).slice(-4), L + tile * 13, y, 4);
+    flap(s.st[0].padEnd(9), L + tile * 18, y, 8 + (s.st[0].length > 8 ? 1 : 0), s.st[1]);
+    y += th + 14;
+  }
+  if (sets.length > shown.length) { txt(`+${sets.length - shown.length} MORE`, L, y + 30, 26, { weight: 700, color: "rgba(255,255,255,.55)" }); y += 40; }
+  y += 30;
+  ctx.fillStyle = "rgba(255,255,255,.12)"; ctx.fillRect(L, y, bw - 80, 2); y += 70;
+  txt("TOTAL", L, y, 30, { weight: 700, color: "rgba(255,255,255,.6)", spacing: 3 });
+  flap(fmtNum(total).padStart(6), bx + bw - 40 - tile * 6, y - th * 0.75, 6, "#ffd23f");
+  if (secs) {
+    y += 90;
+    txt("TIME", L, y, 30, { weight: 700, color: "rgba(255,255,255,.6)", spacing: 3 });
+    flap(fmtTime(secs).padStart(7), bx + bw - 40 - tile * 7, y - th * 0.75, 7);
+  }
+}
+
+// Polaroid: your photo in a white frame, yardage written underneath in marker.
+function drawPolaroid(W, H, accent, unit, { total, secs, date }) {
+  const MK = '"Permanent Marker", cursive', fw = W * 0.74, pad = fw * 0.06, img = fw - 2 * pad, fh = pad + img + fw * 0.3;
+  const cx = W / 2, cy = H / 2;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.045);
+  ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 50; ctx.shadowOffsetY = 20;
+  ctx.fillStyle = "#fbfaf5"; ctx.fillRect(-fw / 2, -fh / 2, fw, fh);
+  ctx.shadowColor = "transparent";
+  const ix = -fw / 2 + pad, iy = -fh / 2 + pad;
+  ctx.save(); ctx.beginPath(); ctx.rect(ix, iy, img, img); ctx.clip();
+  if (photo) {
+    const k = Math.max(img / photo.width, img / photo.height) * frame.zoom, w = photo.width * k, h = photo.height * k;
+    ctx.drawImage(photo, ix + Math.min(0, Math.max(img - w, img / 2 - frame.fx * w)), iy + Math.min(0, Math.max(img - h, img / 2 - frame.fy * h)), w, h);
+  } else {
+    const g = ctx.createLinearGradient(ix, iy, ix + img, iy + img); g.addColorStop(0, "#2aa5e0"); g.addColorStop(1, "#0d4a6b");
+    ctx.fillStyle = g; ctx.fillRect(ix, iy, img, img);
+    ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 6; ctx.setLineDash([24, 18]);
+    for (let x = ix + img / 5; x < ix + img; x += img / 5) { ctx.beginPath(); ctx.moveTo(x, iy); ctx.lineTo(x, iy + img); ctx.stroke(); }
+    ctx.setLineDash([]);
+    txt("add a photo ↖", ix + img / 2, iy + img / 2, 40, { weight: 700, color: "rgba(255,255,255,.7)", align: "center" });
+  }
+  ctx.restore();
+  const ty = iy + img + fw * 0.13;
+  ctx.font = `400 ${fw * 0.09}px ${MK}`; ctx.fillStyle = "#1f2a44"; ctx.textAlign = "center";
+  ctx.fillText(`${fmtNum(total)} ${unit}${secs ? " · " + fmtTime(secs) : ""}`, 0, ty);
+  ctx.font = `400 ${fw * 0.045}px ${MK}`; ctx.fillStyle = "#5b6475";
+  ctx.fillText(`${f.heading.value.toLowerCase()} — ${shortDate(date).toLowerCase()}`, 0, ty + fw * 0.08);
+  ctx.restore();
+  wordmark(cx, H - 80, "center");
+}
+
+// Lane line: a lane rope down the left; each set is a marker placed by cumulative distance.
+function drawLaneLine(W, H, accent, unit, { rows, total, secs, date }) {
+  const M = 80, top = 260, bot = H - 480, rx = M + 30;
+  bfont(52); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 52);
+  txt(date, M, M + 112, 30, { weight: 600, color: "rgba(255,255,255,.8)" });
+  const n = Math.round((bot - top) / 26);
+  for (let i = 0; i < n; i++) { // floats: blue body, red ends like a real lane rope
+    const y = top + i * 26, endish = i < 4 || i > n - 5;
+    ctx.fillStyle = endish ? "#e53935" : i % 2 ? "#1e88e5" : "#e8edf3";
+    ctx.beginPath(); ctx.ellipse(rx, y + 12, 22, 11, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.shadowColor = "rgba(0,0,0,.45)";
+  const items = rows.filter(r => !r.heading);
+  let run = 0, lastY = -1e9;
+  for (const r of items) {
+    const vol = r.reps * r.dist, mid = run + vol / 2; run += vol;
+    let y = top + (bot - top) * (total ? mid / total : 0);
+    y = Math.max(y, lastY + 60); lastY = y;
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(rx, y, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.4)"; ctx.fillRect(rx + 24, y - 1, 46, 2);
+    font(36, 700); const t = clip(describe(r), W - (rx + 90) - M - 130);
+    txt(t, rx + 84, y + 12, 36, { weight: 700 });
+    txt(fmtNum(vol), W - M, y + 12, 32, { weight: 600, color: accent, align: "right" });
+  }
+  const y = H - M - 160;
+  bigDistance(total, unit, M, y - 30, 150, accent, W - 2 * M);
+  if (secs) txt(`${fmtTime(secs)}  ·  ${pacePer100(secs, total)} /100${unit}`, M, y + 36, 36, { weight: 600 });
+  footer(W, H, M, streakBadge());
+}
+
+// Weekly recap: Mon–Sun bars from swims logged on this device (+ today's card if not logged yet).
+function drawWeek(W, H, accent, unit, { total, secs }) {
+  const M = 80, now = new Date(), dow = (now.getDay() + 6) % 7; // 0 = Monday
+  const days = [...Array(7)].map((_, i) => {
+    const key = localDay(i - dow), e = swimLog[key];
+    let d = e ? (e.unit === unit ? e.dist : e.unit === "m" ? e.dist * M_TO_YD : e.dist / M_TO_YD) : 0, t = e?.secs || 0;
+    if (key === (f.date.value || localDay()) && total) { d = total; t = secs; } // the card you're making counts
+    return { key, d, t, label: "MTWTFSS"[i], today: i === dow, future: i > dow };
+  });
+  const sum = days.reduce((a, b) => a + b.d, 0), time = days.reduce((a, b) => a + b.t, 0), count = days.filter(d => d.d).length;
+  const monday = new Date(now); monday.setDate(now.getDate() - dow);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  const fmt = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  txt("WEEK RECAP", M, M + 40, 30, { weight: 800, color: accent, spacing: 6 });
+  txt(`${fmt(monday)} – ${fmt(sunday)}`, M, M + 92, 40, { weight: 600, color: "rgba(255,255,255,.85)" });
+  const chartTop = H * 0.26, chartBot = H * 0.62, cw = (W - 2 * M) / 7, max = Math.max(1, ...days.map(d => d.d));
+  days.forEach((d, i) => {
+    const x = M + i * cw + cw * 0.18, bw = cw * 0.64, h = (chartBot - chartTop) * d.d / max;
+    ctx.fillStyle = d.future ? "rgba(255,255,255,.06)" : "rgba(255,255,255,.12)";
+    ctx.beginPath(); ctx.roundRect(x, chartTop, bw, chartBot - chartTop, 16); ctx.fill();
+    if (d.d) { ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(x, chartBot - h, bw, h, 16); ctx.fill(); }
+    if (d.d) txt(d.d >= 1000 ? (d.d / 1000).toFixed(1) + "k" : fmtNum(d.d), x + bw / 2, chartBot - h - 18, 28, { weight: 700, align: "center" });
+    txt(d.label, x + bw / 2, chartBot + 56, 34, { weight: d.today ? 800 : 600, color: d.today ? accent : "rgba(255,255,255,.7)", align: "center" });
+  });
+  let y = chartBot + 290;
+  bigDistance(sum, unit, M, y, 190, accent, W - 2 * M);
+  y += 150;
+  const n = streak();
+  statRow([{ label: "Swims", value: String(count) }, { label: "Time", value: time ? (time >= 36000 ? `${fmtNum(time / 3600)}h` : fmtTime(time)) : "—" },
+           { label: "Streak", value: n >= 2 ? `🔥 ${n}` : n ? "1 day" : "—" }], M, y, W - 2 * M);
+  footer(W, H, M);
+}
+
 // Paper receipt: one line item per set, totals at the bottom.
 function drawReceipt(W, H, accent, unit, { rows, total, secs, date }) {
   const lines = [["c", "SWIMSHOT", true], ["c", "by Swim House Mafia"], ["c", f.heading.value.toUpperCase()], ["c", date], ["-"]];
@@ -1236,7 +1406,8 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 // ---- looks (carousel slides) ----
 const LOOKS = [["full", "Classic"], ["receipt", "Receipt"], ["texts", "Coach Texts"], ["whiteboard", "Whiteboard"],
                ["boarding", "Boarding Pass"], ["clock", "Pace Clock"], ["scoreboard", "Scoreboard"], ["player", "Now Swimming"],
-               ["facts", "Workout Facts"], ["heats", "Heat Sheet"], ["news", "Front Page"], ["bars", "Bars"], ["poster", "Poster"], ["minimal", "Minimal"]];
+               ["facts", "Workout Facts"], ["heats", "Heat Sheet"], ["news", "Front Page"], ["bars", "Bars"], ["sticker", "Stats Sticker"],
+               ["polaroid", "Polaroid"], ["departures", "Departures"], ["lane", "Lane Line"], ["week", "Week Recap"], ["poster", "Poster"], ["minimal", "Minimal"]];
 const slides = () => [...LOOKS.map(([layout, name]) => ({ layout, name })),
   ...(form ? [["year", "Your year"], ["alltime", "All time"], ["week", "This week"]].map(([period, name]) => ({ period, name, stats: true })) : [])];
 let list = [], full = [], idx = 0, renderId = 0;
@@ -1573,7 +1744,7 @@ const fileName = i => `swimshot-${f.date.value || "card"}-${list[i].layout || li
 // press-and-hold → "Save to Photos" puts the card straight in the camera roll.
 async function share() {
   if (!summarize() && !list[idx]?.stats) return openSheet(true);
-  if (!list[idx]?.stats && f.date.value) markSwim(f.date.value);
+  if (!list[idx]?.stats && list[idx]?.layout !== "week" && f.date.value) markSwim(f.date.value, currentEntry());
   const i = idx, blob = full[i] || await renderFull(i); // usually ready already, so the tap still counts as a tap
   if (canShareFiles) {
     try { return await navigator.share({ files: [new File([blob], fileName(i), { type: "image/png" })] }); }
@@ -1660,7 +1831,7 @@ $("qMake").onclick = () => {
   const dist = parseInt($("qDist").value.replace(/\D/g, ""), 10);
   if (!dist) { $("qDist").focus(); $("qDist").animate([{ transform: "translateX(-8px)" }, { transform: "translateX(8px)" }, { transform: "none" }], 240); return; }
   freshWorkout(`${dist} swim`, $("qTime").value);
-  markSwim();
+  markSwim(localDay(), currentEntry());
   $("quickSheet").close(); showHome(false); openSheet(false);
 };
 $("qSets").onclick = () => {
