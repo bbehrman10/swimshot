@@ -119,7 +119,6 @@
   .home .btn { width:100%; justify-content:center; height:54px; font-size:17px; animation:fadeup .6s .4s var(--spring) both; }
   .home .btn + .btn { margin-top:10px; }
   .home .btn svg { width:22px; height:22px; stroke-width:3; }
-  .streak { margin:-10px 0 16px; font-weight:800; font-size:15px; animation:fadeup .6s .37s var(--spring) both; }
   /* quick log sheet */
   .quick { text-align:center; }
   .bigdist { display:flex; align-items:baseline; justify-content:center; gap:10px; margin:6px 0 14px; }
@@ -246,7 +245,6 @@
     <div class="wordmark">SWIMSHOT</div>
     <div class="by">by <img src="brand/shm.svg" alt="Swim House Mafia"></div>
     <p class="tag">Swam today? Prove it.</p>
-    <p class="streak" id="streak" hidden></p>
     <button type="button" class="btn primary" id="newBtn">
       <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>I swam today</button>
     <button type="button" class="btn quiet" id="continueBtn" hidden></button>
@@ -469,14 +467,14 @@ function drawWorkout(W, H, accent, unit) {
   if (cur.layout === "scoreboard") return drawScoreboard(W, H, unit, w);
   if (cur.layout === "facts") return drawFacts(W, H, unit, w);
   const fun = { clock: drawClock, boarding: drawBoarding, texts: drawTexts, player: drawPlayer, heats: drawHeats, news: drawNews,
-    sticker: drawSticker, departures: drawDepartures, polaroid: drawPolaroid, lane: drawLaneLine, week: drawWeek }[cur.layout];
+    sticker: drawSticker, departures: drawDepartures, polaroid: drawPolaroid, lane: drawLaneLine }[cur.layout];
   if (fun) return fun(W, H, accent, unit, w);
   part("head", M, M, () => {
     bfont(56); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 56);
     txt(date, M, M + 120, 34, { weight: 600, color: "rgba(255,255,255,.8)" });
     return [M - 10, M, W - 2 * M + 20, 140];
   });
-  part("mark", M, H - M, () => { footer(W, H, M, streakBadge()); return [M - 10, H - M - 62, W - 2 * M + 20, 90]; });
+  part("mark", M, H - M, () => { footer(W, H, M); return [M - 10, H - M - 62, W - 2 * M + 20, 90]; });
   let y = H - M - 90;
   const stats = [secs && { label: "Time", value: fmtTime(secs) }, secs && total && { label: `Pace /100${unit}`, value: pacePer100(secs, total) }].filter(Boolean);
   if (stats.length) { const sy = y; part("stats", M, sy, () => { statRow(stats, M, sy, W - 2 * M); return [M - 10, sy - 104, W - 2 * M + 20, 124]; }); y -= 150; }
@@ -606,8 +604,6 @@ function drawPoster(W, H, accent, unit, { total, secs, date }) {
   bigDistance(total, unit, cx, mid + 60, 300, accent, W - 120, true);
   const line = [secs && fmtTime(secs), secs && total && `${pacePer100(secs, total)} /100${unit}`].filter(Boolean).join("   ·   ");
   if (line) txt(line, cx, mid + 170, 48, { weight: 600, align: "center" });
-  const badge = streakBadge();
-  if (badge) txt(badge, cx, mid + 250, 38, { weight: 800, color: accent, align: "center", spacing: 2 });
   wordmark(cx, H - 80, "center");
 }
 
@@ -793,31 +789,6 @@ function drawFacts(W, H, unit, { rows, total, secs, date }) {
   ft("Distributed by Swim House Mafia.", L, y + 64 * s, 24 * s, ink, I, { weight: 800 });
 }
 
-// ---- swim days: which days you logged a swim (this device only), for streaks ----
-let swimDays = [];
-try { swimDays = JSON.parse(localStorage.getItem("swimshot.days") || "[]"); } catch {}
-function localDay(offset = 0) { // "YYYY-MM-DD" in local time, `offset` days from today
-  const d = new Date(); d.setDate(d.getDate() + offset);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
-}
-// Per-day distance/time for the Week Recap, also this device only. Latest card for a day wins.
-let swimLog = {};
-try { swimLog = JSON.parse(localStorage.getItem("swimshot.log") || "{}"); } catch {}
-function markSwim(day = localDay(), entry) {
-  if (entry) { swimLog[day] = entry; try { localStorage.setItem("swimshot.log", JSON.stringify(swimLog)); } catch {} }
-  if (swimDays.includes(day)) return;
-  swimDays.push(day); swimDays.sort();
-  try { localStorage.setItem("swimshot.days", JSON.stringify(swimDays)); } catch {}
-}
-const currentEntry = () => ({ dist: parseSets(f.sets.value).total, unit: f.unit.value, secs: parseTime(f.time.value) });
-function streak() { // consecutive days ending today, or yesterday if today isn't logged yet
-  const has = new Set(swimDays);
-  let d = has.has(localDay()) ? 0 : -1, n = 0;
-  while (has.has(localDay(d))) { n++; d--; }
-  return n;
-}
-const weekCount = () => [0, -1, -2, -3, -4, -5, -6].filter(o => swimDays.includes(localDay(o))).length;
-const streakBadge = () => { const n = streak(); return n >= 2 ? `🔥 DAY ${n}` : ""; };
 
 // ---- shared helpers for the newer cards ----
 function wrap(s, maxW) { // word-wrap with the current ctx.font
@@ -1282,39 +1253,6 @@ function drawLaneLine(W, H, accent, unit, { rows, total, secs, date }) {
   const y = H - M - 160;
   bigDistance(total, unit, M, y - 30, 150, accent, W - 2 * M);
   if (secs) txt(`${fmtTime(secs)}  ·  ${pacePer100(secs, total)} /100${unit}`, M, y + 36, 36, { weight: 600 });
-  footer(W, H, M, streakBadge());
-}
-
-// Weekly recap: Mon–Sun bars from swims logged on this device (+ today's card if not logged yet).
-function drawWeek(W, H, accent, unit, { total, secs }) {
-  const M = 80, now = new Date(), dow = (now.getDay() + 6) % 7; // 0 = Monday
-  const days = [...Array(7)].map((_, i) => {
-    const key = localDay(i - dow), e = swimLog[key];
-    let d = e ? (e.unit === unit ? e.dist : e.unit === "m" ? e.dist * M_TO_YD : e.dist / M_TO_YD) : 0, t = e?.secs || 0;
-    if (key === (f.date.value || localDay()) && total) { d = total; t = secs; } // the card you're making counts
-    return { key, d, t, label: "MTWTFSS"[i], today: i === dow, future: i > dow };
-  });
-  const sum = days.reduce((a, b) => a + b.d, 0), time = days.reduce((a, b) => a + b.t, 0), count = days.filter(d => d.d).length;
-  const monday = new Date(now); monday.setDate(now.getDate() - dow);
-  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-  const fmt = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  txt("WEEK RECAP", M, M + 40, 30, { weight: 800, color: accent, spacing: 6 });
-  txt(`${fmt(monday)} – ${fmt(sunday)}`, M, M + 92, 40, { weight: 600, color: "rgba(255,255,255,.85)" });
-  const chartTop = H * 0.26, chartBot = H * 0.62, cw = (W - 2 * M) / 7, max = Math.max(1, ...days.map(d => d.d));
-  days.forEach((d, i) => {
-    const x = M + i * cw + cw * 0.18, bw = cw * 0.64, h = (chartBot - chartTop) * d.d / max;
-    ctx.fillStyle = d.future ? "rgba(255,255,255,.06)" : "rgba(255,255,255,.12)";
-    ctx.beginPath(); ctx.roundRect(x, chartTop, bw, chartBot - chartTop, 16); ctx.fill();
-    if (d.d) { ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(x, chartBot - h, bw, h, 16); ctx.fill(); }
-    if (d.d) txt(d.d >= 1000 ? (d.d / 1000).toFixed(1) + "k" : fmtNum(d.d), x + bw / 2, chartBot - h - 18, 28, { weight: 700, align: "center" });
-    txt(d.label, x + bw / 2, chartBot + 56, 34, { weight: d.today ? 800 : 600, color: d.today ? accent : "rgba(255,255,255,.7)", align: "center" });
-  });
-  let y = chartBot + 290;
-  bigDistance(sum, unit, M, y, 190, accent, W - 2 * M);
-  y += 150;
-  const n = streak();
-  statRow([{ label: "Swims", value: String(count) }, { label: "Time", value: time ? (time >= 36000 ? `${fmtNum(time / 3600)}h` : fmtTime(time)) : "—" },
-           { label: "Streak", value: n >= 2 ? `🔥 ${n}` : n ? "1 day" : "—" }], M, y, W - 2 * M);
   footer(W, H, M);
 }
 
@@ -1407,7 +1345,7 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 const LOOKS = [["full", "Classic"], ["receipt", "Receipt"], ["texts", "Coach Texts"], ["whiteboard", "Whiteboard"],
                ["boarding", "Boarding Pass"], ["clock", "Pace Clock"], ["scoreboard", "Scoreboard"], ["player", "Now Swimming"],
                ["facts", "Workout Facts"], ["heats", "Heat Sheet"], ["news", "Front Page"], ["bars", "Bars"], ["sticker", "Stats Sticker"],
-               ["polaroid", "Polaroid"], ["departures", "Departures"], ["lane", "Lane Line"], ["week", "Week Recap"], ["poster", "Poster"], ["minimal", "Minimal"]];
+               ["polaroid", "Polaroid"], ["departures", "Departures"], ["lane", "Lane Line"], ["poster", "Poster"], ["minimal", "Minimal"]];
 const slides = () => [...LOOKS.map(([layout, name]) => ({ layout, name })),
   ...(form ? [["year", "Your year"], ["alltime", "All time"], ["week", "This week"]].map(([period, name]) => ({ period, name, stats: true })) : [])];
 let list = [], full = [], idx = 0, renderId = 0;
@@ -1744,7 +1682,6 @@ const fileName = i => `swimshot-${f.date.value || "card"}-${list[i].layout || li
 // press-and-hold → "Save to Photos" puts the card straight in the camera roll.
 async function share() {
   if (!summarize() && !list[idx]?.stats) return openSheet(true);
-  if (!list[idx]?.stats && list[idx]?.layout !== "week" && f.date.value) markSwim(f.date.value, currentEntry());
   const i = idx, blob = full[i] || await renderFull(i); // usually ready already, so the tap still counts as a tap
   if (canShareFiles) {
     try { return await navigator.share({ files: [new File([blob], fileName(i), { type: "image/png" })] }); }
@@ -1760,6 +1697,7 @@ function openViewer(blob, i) {
   $("viewer").hidden = false; $("viewClose").focus();
 }
 const closeViewer = () => { $("viewer").hidden = true; $("save").focus(); };
+
 $("viewClose").onclick = closeViewer;
 $("viewer").addEventListener("click", e => { if (e.target === $("viewer")) closeViewer(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("viewer").hidden) closeViewer(); });
@@ -1804,9 +1742,6 @@ function showHome(show = true) {
   $("home").classList.toggle("gone", !show);
   $("home").inert = !show; app.querySelectorAll(".stage, .sheet").forEach(el => el.inert = show);
   if (show) {
-    const n = streak(), w = weekCount(), today = swimDays.includes(localDay());
-    const bits = [n >= 2 ? `🔥 ${n}-day streak` : today ? "✓ Logged today" : "", w ? `${w} swim${w === 1 ? "" : "s"} this week` : ""].filter(Boolean);
-    $("streak").hidden = !bits.length; $("streak").textContent = bits.join(" · ");
     const total = summarize();
     $("continueBtn").hidden = !total;
     $("continueBtn").textContent = `Continue · ${fmtNum(total)} ${f.unit.value} · ${f.heading.value}`;
@@ -1831,7 +1766,6 @@ $("qMake").onclick = () => {
   const dist = parseInt($("qDist").value.replace(/\D/g, ""), 10);
   if (!dist) { $("qDist").focus(); $("qDist").animate([{ transform: "translateX(-8px)" }, { transform: "translateX(8px)" }, { transform: "none" }], 240); return; }
   freshWorkout(`${dist} swim`, $("qTime").value);
-  markSwim(localDay(), currentEntry());
   $("quickSheet").close(); showHome(false); openSheet(false);
 };
 $("qSets").onclick = () => {
