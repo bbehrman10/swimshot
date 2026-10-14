@@ -266,6 +266,7 @@
       <svg viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6M11 8v6"/></svg></label>
     <div class="adj-actions">
       <button type="button" class="btn quiet" id="adjReset">Reset</button>
+      <button type="button" class="btn quiet" id="adjHide" hidden>Hide</button>
       <button type="button" class="btn quiet" id="adjReplace">Photo…</button>
       <button type="button" class="btn primary" id="adjDone">Done</button>
     </div>
@@ -332,7 +333,8 @@
 <script type="module">
 import { parseSets, parseTime, fmtTime, pacePer100, fmtNum } from "./sets.mjs";
 
-const f = document.getElementById("f"), cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const f = document.getElementById("f"), cv = document.getElementById("c");
+let ctx = cv.getContext("2d"); // swapped to the Adjust canvas while adjusting
 const $ = id => document.getElementById(id);
 const SIZES = { story: [1080, 1920], post: [1080, 1350], square: [1080, 1080] };
 const M_TO_YD = 1.0936133;
@@ -440,6 +442,22 @@ function footer(W, H, M, right) {
   if (right) txt(right, W - M, H - M, 26, { weight: 600, color: "rgba(255,255,255,.6)", align: "right" });
 }
 
+// ---- movable parts (Classic / Bars / Minimal): each layout keeps its own offsets, scale, hidden ----
+const parts = {};            // {layout: {name: {x, y, s, hide}}}
+let boxes = {};              // name -> [x, y, w, h] on the card, filled while drawing (before the whole-text transform)
+const lastBox = {};          // remembered boxes so hidden parts can still be found and tapped
+// Draws one part scaled around anchor (ax, ay) and moved by its offset. draw() returns its unscaled box.
+function part(name, ax, ay, draw) {
+  const b = parts[cur.layout]?.[name] || {}, s = b.s || 1, dx = b.x || 0, dy = b.y || 0;
+  let box = lastBox[cur.layout + name];
+  if (!b.hide) {
+    ctx.save(); ctx.translate(ax + dx, ay + dy); ctx.scale(s, s); ctx.translate(-ax, -ay);
+    box = draw(); ctx.restore();
+    lastBox[cur.layout + name] = box;
+  }
+  if (box) boxes[name] = [ax + dx + (box[0] - ax) * s, ay + dy + (box[1] - ay) * s, box[2] * s, box[3] * s, !!b.hide];
+}
+
 // ---- cards ----
 function drawWorkout(W, H, accent, unit) {
   const M = 80, { rows, total } = parseSets(f.sets.value), secs = parseTime(f.time.value);
@@ -452,21 +470,22 @@ function drawWorkout(W, H, accent, unit) {
   if (cur.layout === "facts") return drawFacts(W, H, unit, w);
   const fun = { clock: drawClock, boarding: drawBoarding, texts: drawTexts, player: drawPlayer, heats: drawHeats, news: drawNews }[cur.layout];
   if (fun) return fun(W, H, accent, unit, w);
-  bfont(56); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 56);
-  txt(date, M, M + 120, 34, { weight: 600, color: "rgba(255,255,255,.8)" });
-
-  footer(W, H, M, streakBadge());
+  part("head", M, M, () => {
+    bfont(56); btxt(clip(f.heading.value.toUpperCase(), W - 2 * M), M, M + 60, 56);
+    txt(date, M, M + 120, 34, { weight: 600, color: "rgba(255,255,255,.8)" });
+    return [M - 10, M, W - 2 * M + 20, 140];
+  });
+  part("mark", M, H - M, () => { footer(W, H, M, streakBadge()); return [M - 10, H - M - 62, W - 2 * M + 20, 90]; });
   let y = H - M - 90;
   const stats = [secs && { label: "Time", value: fmtTime(secs) }, secs && total && { label: `Pace /100${unit}`, value: pacePer100(secs, total) }].filter(Boolean);
-  if (stats.length) { statRow(stats, M, y, W - 2 * M); y -= 150; }
-  const big = cur.layout === "minimal" ? 260 : H < 1500 ? 160 : 210;
-  bigDistance(total, unit, M, y, big, accent, W - 2 * M);
+  if (stats.length) { const sy = y; part("stats", M, sy, () => { statRow(stats, M, sy, W - 2 * M); return [M - 10, sy - 104, W - 2 * M + 20, 124]; }); y -= 150; }
+  const big = cur.layout === "minimal" ? 260 : H < 1500 ? 160 : 210, by = y;
+  part("big", M, by, () => { bigDistance(total, unit, M, by, big, accent, W - 2 * M); return [M - 10, by - big * 0.78, W - 2 * M + 20, big * 0.9]; });
   const top = M + 170, bottom = y - big - 40;
-  if (cur.layout === "bars") return drawBars(rows, M, top, W - 2 * M, bottom, accent);
-  if (cur.layout !== "full" || !rows.length) return;
-  if (rows.length === 1 && !rows[0].group && rows[0].reps === 1) return; // a quick log: the big number says it all
-
-  drawList(rows, M, top, W - 2 * M, bottom, accent);
+  const sets = cur.layout === "bars" ? () => drawBars(rows, M, top, W - 2 * M, bottom, accent)
+    : cur.layout === "full" && rows.length && !(rows.length === 1 && !rows[0].group && rows[0].reps === 1) // a quick log: the big number says it all
+      ? () => drawList(rows, M, top, W - 2 * M, bottom, accent) : null;
+  if (sets) part("sets", M, bottom, () => { const t = sets() ?? top; return [M - 10, t - 10, W - 2 * M + 20, bottom - t + 20]; });
 }
 
 // Rows -> display lines; group items are indented under their "3×" line.
@@ -494,7 +513,7 @@ function splitAt(ls, per) {
 // Set list in [top, bottom]: one column, then two, shrinking font; truncate as a last resort.
 function drawList(rows, x, top, width, bottom, accent) {
   const lines = listLines(rows);
-  if (!lines.length) return;
+  if (!lines.length) return bottom;
   let cols, size, lh, per;
   fit: for (cols of [1, 2]) for (size = cols === 1 ? 46 : 38; size >= (cols === 1 ? 30 : 24); size -= 2) {
     lh = size * 1.4; per = Math.floor((bottom - top) / lh);
@@ -512,6 +531,7 @@ function drawList(rows, x, top, width, bottom, accent) {
     columns = [lines.slice(0, k), extra ? [...c2, { more: `+${extra} more` }] : c2];
   }
   const n = Math.max(...columns.map(c => c.length)); // rows tall, for bottom alignment
+  const usedTop = bottom - n * lh;
   const IND = size * 0.9;
   for (let c = 0; c < cols; c++) {
     const col = columns[c], cx = x + c * (colW + 48);
@@ -530,6 +550,7 @@ function drawList(rows, x, top, width, bottom, accent) {
       ly += lh;
     }
   }
+  return usedTop;
 }
 const setStr = r => (r.reps > 1 ? `${r.reps}×${r.dist}` : String(r.dist));
 
@@ -545,7 +566,7 @@ function drawBars(rows, x, top, width, bottom, accent) {
         ind: true, last: i === r.items.length - 1 }));
     } else lines.push({ label: `${setStr(r)} ${r.label}`.trim(), vol: r.reps * r.dist });
   }
-  if (!lines.length) return;
+  if (!lines.length) return bottom;
   const hOf = (l, size) => l.h ? size * 1.15 : l.g ? size * 1.45 : size * 2.45; // heading / group header / label + bar
   const heightOf = (ls, size) => ls.reduce((t, l) => t + hOf(l, size), 0);
   let size = 36, shown = lines;
@@ -574,6 +595,7 @@ function drawBars(rows, x, top, width, bottom, accent) {
     y += hOf(l, size);
   }
   if (extra) txt(`+${extra} more`, x, y + size, size * 0.8, { weight: 600, color: "rgba(255,255,255,.7)" });
+  return bottom - heightOf(shown, size) - (extra ? size * 1.4 : 0);
 }
 
 function drawPoster(W, H, accent, unit, { total, secs, date }) {
@@ -1223,17 +1245,24 @@ const PREVIEW = 0.5; // previews render at half size: much faster on phones, sti
 // Draws slide s at `scale` (card code always works in full 1080-wide coordinates).
 // Text overlay placement: scale around the card center plus an offset (card px). Set on the Adjust screen.
 const ovl = { s: 1, x: 0, y: 0 };
-function drawSlide(s, scale = 1) {
-  const [W, H] = SIZES[f.size.value], accent = f.accent.value, unit = f.unit.value;
-  cv.width = W * scale; cv.height = H * scale;
+// Paints slide s onto 2D context c at `scale` (card code works in 1080-wide coordinates).
+function paintCard(c, s, scale, { shadow = true } = {}) {
+  const [W, H] = SIZES[f.size.value], accent = f.accent.value, unit = f.unit.value, keep = ctx;
+  ctx = c; boxes = {};
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   background(W, H, f.sticker.checked);
-  ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 18 * scale; ctx.shadowOffsetY = 2;
+  ctx.shadowColor = shadow ? "rgba(0,0,0,.45)" : "transparent"; ctx.shadowBlur = 18 * scale; ctx.shadowOffsetY = 2;
   ctx.save(); ctx.translate(W / 2 + ovl.x, H / 2 + ovl.y); ctx.scale(ovl.s, ovl.s); ctx.translate(-W / 2, -H / 2);
   if (s.stats) { cur.period = s.period; drawStats(W, H, accent, unit); }
   else { cur.layout = s.layout; drawWorkout(W, H, accent, unit); }
   ctx.restore();
   ctx.shadowColor = "transparent";
+  ctx = keep;
+}
+function drawSlide(s, scale = 1) {
+  const [W, H] = SIZES[f.size.value];
+  cv.width = W * scale; cv.height = H * scale;
+  paintCard(cv.getContext("2d"), s, scale);
   const png = scale === 1 || f.sticker.checked; // toBlob snapshots now, so the next draw can start right away
   return new Promise(r => cv.toBlob(r, png ? "image/png" : "image/jpeg", 0.88));
 }
@@ -1390,7 +1419,9 @@ $("example").onclick = () => {
 $("photoBtn").onclick = () => photo ? openAdjust("photo") : f.photo.click();
 $("adjReplace").onclick = () => f.photo.click();
 $("adjReset").onclick = () => {
-  if (adjTarget() === "photo") Object.assign(frame, { zoom: 1, fx: 0.5, fy: 0.5 }); else Object.assign(ovl, { s: 1, x: 0, y: 0 });
+  if (adjTarget() === "photo") Object.assign(frame, { zoom: 1, fx: 0.5, fy: 0.5 });
+  else if (sel) delete parts[cur.layout][sel];
+  else { Object.assign(ovl, { s: 1, x: 0, y: 0 }); delete parts[cur.layout]; } // nothing selected: reset this layout entirely
   syncZoom(); paintAdjust();
 };
 $("adjDone").onclick = () => closeAdjust();
@@ -1422,26 +1453,28 @@ f.photo.onchange = async () => {
   if ($("adjust").hidden) openAdjust("photo"); else { f.adjWhat.value = "photo"; syncZoom(); paintAdjust(); }
 };
 
-// While adjusting, the card's text is drawn once onto a transparent layer; each frame only redraws the photo under it.
-const adj = $("adjCv"), actx = adj.getContext("2d"), textLayer = document.createElement("canvas");
+// Adjust: repaints the whole card live. In Text mode, tap a part (title, sets, big number, stats, mark) to move/resize/hide it alone.
+const adj = $("adjCv"), actx = adj.getContext("2d");
+let sel = null, dragging = false, adjBoxes = {};
 const ADJ = 0.5;
 const adjTarget = () => f.adjWhat.value; // "photo" | "text"
 function syncZoom() { // the slider follows whatever you're adjusting
-  const z = $("zoom"), t = adjTarget();
-  [z.min, z.max] = t === "photo" ? [100, 400] : [40, 160];
-  z.value = Math.round((t === "photo" ? frame.zoom : ovl.s) * 100);
-  $("adjHint").textContent = t === "photo" ? "Drag to move · pinch to zoom" : "Drag to move · pinch to resize";
+  const z = $("zoom"), t = adjTarget(), onPart = t === "text" && sel;
+  [z.min, z.max] = t === "photo" ? [100, 400] : onPart ? [40, 200] : [40, 160];
+  z.value = Math.round((t === "photo" ? frame.zoom : onPart ? (partState().s || 1) : ovl.s) * 100);
+  const hasParts = Object.keys(adjBoxes).length > 0;
+  $("adjHint").textContent = t === "photo" ? "Drag to move · pinch to zoom"
+    : onPart ? `${PART_NAMES[sel]} · drag to move · pinch to resize` : hasParts ? "Tap a part to move it on its own · or drag everything" : "Drag to move · pinch to resize";
+  $("adjHide").hidden = !onPart;
+  $("adjHide").textContent = onPart && partState().hide ? "Show" : "Hide";
 }
 function openAdjust(what = "text") {
-  const [W, H] = SIZES[f.size.value], keep = f.sticker.checked, keepO = { ...ovl };
-  Object.assign(ovl, { s: 1, x: 0, y: 0 }); f.sticker.checked = true;
-  drawSlide(list[idx] || { layout: "full" }, ADJ); // untransformed text on transparent: moved/scaled live below
-  f.sticker.checked = keep; Object.assign(ovl, keepO);
-  textLayer.width = cv.width; textLayer.height = cv.height; textLayer.getContext("2d").drawImage(cv, 0, 0);
+  const [W, H] = SIZES[f.size.value];
   adj.width = W * ADJ; adj.height = H * ADJ;
   f.adjWhat.value = what === "photo" && photo ? "photo" : "text";
   f.adjWhat[0].disabled = !photo;
-  syncZoom();
+  sel = null;
+  paintCard(actx, list[idx] || { layout: "full" }, ADJ); adjBoxes = boxes; syncZoom();
   $("adjust").hidden = false; $("adjDone").focus();
   paintAdjust();
 }
@@ -1455,24 +1488,46 @@ function paintAdjust() {
   if (paintQueued) return; paintQueued = true;
   requestAnimationFrame(() => {
     paintQueued = false;
-    const [W, H] = SIZES[f.size.value];
-    actx.setTransform(ADJ, 0, 0, ADJ, 0, 0);
-    background(W, H, f.sticker.checked, actx); // same as the final card
+    const [W, H] = SIZES[f.size.value], slide = list[idx] || { layout: "full" };
+    paintCard(actx, slide, ADJ, { shadow: !dragging }); // no text shadows mid-drag: keeps it smooth on phones
+    adjBoxes = boxes;
+    if (adjTarget() !== "text") return;
+    actx.setTransform(ADJ, 0, 0, ADJ, 0, 0); // outlines for the movable parts
     actx.translate(W / 2 + ovl.x, H / 2 + ovl.y); actx.scale(ovl.s, ovl.s); actx.translate(-W / 2, -H / 2);
-    actx.drawImage(textLayer, 0, 0, W, H);
+    for (const [name, [x, y, w, hh, hidden]] of Object.entries(adjBoxes)) {
+      const on = name === sel;
+      actx.setLineDash(on ? [] : [14, 10]); actx.lineWidth = (on ? 5 : 3) / ovl.s;
+      actx.strokeStyle = on ? f.accent.value : hidden ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.55)";
+      actx.beginPath(); actx.roundRect(x, y, w, hh, 14); actx.stroke();
+      if (hidden) { actx.font = `700 ${28 / ovl.s}px Inter`; actx.fillStyle = "rgba(255,255,255,.7)"; actx.fillText("hidden · tap to show", x + 16, y + hh / 2 + 10); }
+    }
+    actx.setLineDash([]); actx.setTransform(1, 0, 0, 1, 0, 0);
   });
+}
+const PART_NAMES = { head: "Title", sets: "Sets", big: "Distance", stats: "Time & pace", mark: "Swimshot mark" };
+function partState() { return (parts[cur.layout] ||= {})[sel] ||= {}; }
+function selectAt(clientX, clientY) { // pointer -> card coords -> undo whole-text transform -> hit test
+  const [W, H] = SIZES[f.size.value], r = adj.getBoundingClientRect(), k = W / r.width;
+  const cx = ((clientX - r.left) * k - (W / 2 + ovl.x)) / ovl.s + W / 2, cy = ((clientY - r.top) * k - (H / 2 + ovl.y)) / ovl.s + H / 2;
+  const hit = ["mark", "stats", "big", "head", "sets"].find(n => { const b = adjBoxes[n]; return b && cx >= b[0] && cx <= b[0] + b[2] && cy >= b[1] && cy <= b[1] + b[3]; });
+  sel = hit || null; syncZoom(); paintAdjust();
 }
 // gestures: one finger pans, two fingers pinch-zoom (around their midpoint), wheel zooms
 const pts = new Map();
 let last = null;
 function setZoom(z) {
   if (adjTarget() === "photo") frame.zoom = Math.min(4, Math.max(1, z));
+  else if (sel) partState().s = Math.min(2, Math.max(0.4, z));
   else ovl.s = Math.min(1.6, Math.max(0.4, z));
   syncZoom(); paintAdjust();
 }
-const zoomNow = () => adjTarget() === "photo" ? frame.zoom : ovl.s;
+const zoomNow = () => adjTarget() === "photo" ? frame.zoom : sel ? (partState().s || 1) : ovl.s;
 function pan(dx, dy) {
   const [W, H] = SIZES[f.size.value], k = W / adj.getBoundingClientRect().width;
+  if (adjTarget() === "text" && sel) {
+    const b = partState(); b.x = Math.max(-W, Math.min(W, (b.x || 0) + dx * k / ovl.s)); b.y = Math.max(-H, Math.min(H, (b.y || 0) + dy * k / ovl.s));
+    return paintAdjust();
+  }
   if (adjTarget() === "text") { // keep at least part of the text on the card
     ovl.x = Math.max(-W * 0.6, Math.min(W * 0.6, ovl.x + dx * k));
     ovl.y = Math.max(-H * 0.6, Math.min(H * 0.6, ovl.y + dy * k));
@@ -1489,7 +1544,11 @@ const gesture = () => {
   if (p.length === 1) return { x: p[0].x, y: p[0].y, d: 0 };
   return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) };
 };
-adj.addEventListener("pointerdown", e => { adj.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = gesture(); });
+adj.addEventListener("pointerdown", e => {
+  adj.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = gesture();
+  if (pts.size === 1 && adjTarget() === "text") selectAt(e.clientX, e.clientY); // first finger picks the part
+  dragging = true;
+});
 adj.addEventListener("pointermove", e => {
   if (!pts.has(e.pointerId)) return;
   pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1498,10 +1557,11 @@ adj.addEventListener("pointermove", e => {
   if (last) pan(g.x - last.x, g.y - last.y);
   last = g;
 });
-const lift = e => { pts.delete(e.pointerId); last = pts.size ? gesture() : null; };
+const lift = e => { pts.delete(e.pointerId); last = pts.size ? gesture() : null; if (!pts.size) { dragging = false; paintAdjust(); } };
 adj.addEventListener("pointerup", lift); adj.addEventListener("pointercancel", lift);
 adj.addEventListener("wheel", e => { e.preventDefault(); setZoom(zoomNow() * Math.exp(-e.deltaY / 400)); }, { passive: false });
-f.adjWhat.forEach(r => r.addEventListener("change", e => { e.stopPropagation(); syncZoom(); }));
+f.adjWhat.forEach(r => r.addEventListener("change", e => { e.stopPropagation(); sel = null; syncZoom(); paintAdjust(); }));
+$("adjHide").onclick = () => { const b = partState(); b.hide = !b.hide; syncZoom(); paintAdjust(); };
 $("zoom").addEventListener("input", e => { e.stopPropagation(); setZoom(e.target.value / 100); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("adjust").hidden) closeAdjust(); });
 
@@ -1543,13 +1603,14 @@ if (!canShareFiles) $("save").querySelector("span").textContent = "Save";
 // ---- persisted inputs (convenience only; page works without storage) ----
 const KEEP = ["heading", "time", "sets", "unit", "size", "accent", "sticker", "dim"];
 function persist() { try {
-  localStorage.setItem("swimshot", JSON.stringify({ idx, ovl, ...Object.fromEntries(KEEP.map(k => [k, f[k].type === "checkbox" ? f[k].checked : f[k].value])) }));
+  localStorage.setItem("swimshot", JSON.stringify({ idx, ovl, parts, ...Object.fromEntries(KEEP.map(k => [k, f[k].type === "checkbox" ? f[k].checked : f[k].value])) }));
 } catch {} }
 try {
   const saved = JSON.parse(localStorage.getItem("swimshot") || "{}");
   for (const k of KEEP) if (k in saved) f[k].type === "checkbox" ? (f[k].checked = saved[k]) : (f[k].value = saved[k]);
   idx = saved.idx || 0;
   if (saved.ovl) Object.assign(ovl, saved.ovl);
+  if (saved.parts) Object.assign(parts, saved.parts);
 } catch {}
 if (!f.accent.value) f.accent.value = "#F3EBDD";
 if (!f.size.value) f.size.value = "story";
