@@ -223,6 +223,11 @@
   .help td:first-child { white-space:nowrap; }
   .help code { color:var(--accent); font-family:"JetBrains Mono", monospace; font-size:13.5px; }
   .help p { color:var(--muted); font-size:14px; }
+  .swims { list-style:none; margin:0 0 12px; padding:0; max-height:55vh; overflow:auto; }
+  .swims button { width:100%; display:flex; justify-content:space-between; align-items:center; gap:12px; text-align:left; padding:14px; margin:0 0 8px;
+                  border:0; border-radius:14px; background:var(--panel2); color:var(--text); }
+  .swims b { font:900 19px var(--brand); font-stretch:125%; }
+  .swims span { color:var(--muted); font-size:14px; }
   .linkish { background:none; border:0; color:var(--accent); font-weight:700; padding:8px 0; font-size:15px; }
   @media (prefers-reduced-motion:reduce) { *, *::before { transition:none !important; animation:none !important; } }
 </style>
@@ -275,6 +280,7 @@
             <div class="crow" id="cAdd">
               <button type="button" class="chip ghost" id="addSection">＋ Section</button>
               <button type="button" class="chip ghost" id="addRound">＋ Round</button>
+              <button type="button" class="chip ghost" id="formChip" hidden>⤓ FORM</button>
               <span class="secs" id="secChips" hidden></span>
             </div>
             <div class="crow" data-k="reps" aria-label="Reps"></div>
@@ -304,6 +310,7 @@
     <button type="button" class="btn primary" id="newBtn">
       <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>I swam today</button>
     <button type="button" class="btn quiet" id="continueBtn" hidden></button>
+    <button type="button" class="btn quiet" id="formBtn" hidden>Import from FORM</button>
   </section>
 
   <div class="adjust" id="adjust" role="dialog" aria-modal="true" aria-label="Adjust photo" hidden>
@@ -368,6 +375,14 @@
   <button type="button" class="linkish wide" id="qSets">Add my sets instead</button>
 </dialog>
 
+<dialog id="formSheet" aria-label="Import a swim from FORM" tabindex="-1">
+  <div class="grip"></div>
+  <h2>Import from FORM</h2>
+  <label class="toggle" style="margin-bottom:14px">My fly shows up as breast <input type="checkbox" id="flyFix"></label>
+  <ol class="swims" id="swims"><li class="bempty">Loading your swims…</li></ol>
+  <button type="button" class="btn quiet wide" data-close>Cancel</button>
+</dialog>
+
 <dialog id="helpSheet" class="help" aria-label="How to write a workout" tabindex="-1">
   <div class="grip"></div>
   <h2>Swimshot <span style="color:var(--muted);font-weight:800">by</span> Swim House Mafia</h2>
@@ -395,7 +410,7 @@ const $ = id => document.getElementById(id);
 const SIZES = { story: [1080, 1920], post: [1080, 1350], square: [1080, 1080] };
 const M_TO_YD = 1.0936133;
 const STROKE_COLORS = { freestyle: "#5ad1ff", backstroke: "#7c8cff", butterfly: "#ff7ab6", breaststroke: "#4ee0a0", drill: "#ffd166", openwater: "#f4a261" };
-let photo = null, form = null; // form = {me, stats} from /api/form (only when served by form.py with a login)
+let photo = null, form = null; // form = {me, stats} from /api/form (only when a local bridge provides it)
 const cur = { layout: "full", period: "year" }; // what the card functions draw
 
 // ---- drawing helpers ----
@@ -1931,6 +1946,33 @@ if (!f.size.value) f.size.value = "story";
 f.date.valueAsDate = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4);
 if (!f.heading.value) { const hr = new Date().getHours();
   f.heading.value = `${hr < 11 ? "Morning" : hr < 15 ? "Lunch" : hr < 21 ? "Evening" : "Night"} Swim`; }
+
+// ---- FORM import (only when a local bridge on this network provides /api/swims) ----
+let formOK = false;
+try { $("flyFix").checked = localStorage.getItem("swimshot.flyfix") === "1"; } catch {}
+$("flyFix").onchange = () => { try { localStorage.setItem("swimshot.flyfix", $("flyFix").checked ? "1" : "0"); } catch {} };
+async function openFormImport() {
+  $("formSheet").showModal(); $("formSheet").focus();
+  $("swims").innerHTML = '<li class="bempty">Loading your swims…</li>';
+  try {
+    const swims = await fetch("/api/swims").then(r => r.ok ? r.json() : Promise.reject());
+    $("swims").innerHTML = swims.length ? swims.map(s => `<li><button type="button" data-id="${esc(s.id)}"><span><b>${fmtNum(s.distance)} ${s.unit}</b><br>${esc(s.when)}</span><span>${fmtTime(s.seconds)}</span></button></li>`).join("")
+      : '<li class="bempty">No pool swims found.</li>';
+  } catch { $("swims").innerHTML = '<li class="bempty">Couldn\'t reach FORM from this device.</li>'; }
+}
+$("swims").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-id]"); if (!b) return;
+  b.querySelector("span").innerHTML += " · loading…";
+  try {
+    const s = await fetch(`/api/swims/${encodeURIComponent(b.dataset.id)}${$("flyFix").checked ? "?fly=1" : ""}`).then(r => r.ok ? r.json() : Promise.reject());
+    f.heading.value = s.title; f.unit.value = s.unit; f.date.value = s.date;
+    f.time.value = fmtTime(s.seconds); f.sets.value = s.sets;
+    quickSeed = false; cursor = editPath = null; changed();
+    $("formSheet").close(); showHome(false); openSheet(true);
+  } catch { alert("Couldn't load that swim from FORM."); }
+});
+$("formBtn").onclick = $("formChip").onclick = openFormImport;
+fetch("/api/swims", { method: "HEAD" }).then(r => { formOK = r.status !== 404; $("formBtn").hidden = $("formChip").hidden = !formOK; }).catch(() => {});
 
 // ---- title screen ----
 const DEMO = { heading: "Morning Swim", time: "1:15:00",
