@@ -1,6 +1,6 @@
 // node test_sets.mjs
 import assert from "node:assert/strict";
-import { parseSets, parseTime, fmtTime, pacePer100 } from "./sets.mjs";
+import { parseSets, parseTime, fmtTime, pacePer100, serializeSets } from "./sets.mjs";
 
 const { rows, total } = parseSets(`Warmup:
 400 swim
@@ -45,4 +45,11 @@ assert.equal(fmtTime(3930), "1:05:30");
 assert.equal(fmtTime(90), "1:30");
 assert.equal(pacePer100(1800, 2000), "1:30");
 assert.equal(pacePer100(0, 2000), "");
+// builder round trip: text -> rows -> text -> rows is stable
+for (const text of ["Main\n3x\n- 2x200 Free easy\n- 4x100 Free medium\n- 4x50 Free fast\nGrind\n2x\n- 2x50 Free fast\n- 1x100 Free fast\n3x all out\n- 2x50 Fly\n- 2x50 Free\nCooldown\n300 Pull easy",
+                    "400 swim\n8x100 free @1:30", "Main\n3x\n200 easy"]) {
+  const a = parseSets(text), b = parseSets(serializeSets(a.rows));
+  assert.deepEqual(b.rows, a.rows); assert.equal(b.total, a.total);
+}
+assert.equal(parseSets(serializeSets([{ group: true, reps: 3, label: "", dist: 0, items: [] }, { reps: 1, dist: 200, label: "easy" }])).rows.length, 2); // empty round stays separate
 console.log("ok");

@@ -37,7 +37,7 @@
            box-shadow:0 4px 14px rgba(0,0,0,.4); cursor:pointer; flex:none; }
   .app.editing #thumb { display:block; }
   /* typing sets: tuck title + date/time away so the workout gets the space above the keyboard */
-  .app.typing .title, .app.typing .meta { display:none; }
+  .app.typing .title { display:none; }
   .round { width:44px; height:44px; display:grid; place-items:center; border-radius:50%; border:0; background:rgba(255,255,255,.08);
            backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); transition:transform .15s var(--spring), background .2s; }
   .round:active { transform:scale(.9); background:rgba(255,255,255,.16); }
@@ -82,7 +82,7 @@
   .body { display:none; }
   .sheet.open .body { display:flex; flex:1; min-height:0; animation:rise .3s var(--spring); }
   @keyframes rise { from { opacity:0; transform:translateY(24px); } }
-  .body > div { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .body > div { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; } /* min-width:0: chip rows scroll instead of widening the sheet */
   .editing { flex:1; min-height:0; display:flex; flex-direction:column; border-top:1px solid var(--line); }
   .title { background:none; border:0; padding:12px 16px 4px; font:800 22px/1.2 var(--brand); font-stretch:125%; outline:none; }
   .meta { display:flex; gap:8px; padding:6px 16px 4px; overflow-x:auto; scrollbar-width:none; }
@@ -95,7 +95,37 @@
   textarea[name=sets] { flex:1; min-height:60px; resize:none; border:0; background:none; padding:8px 16px; outline:none;
          font:16px/1.6 "JetBrains Mono", ui-monospace, Menlo, monospace; color:var(--text); }
   textarea::placeholder { color:#4b5b6d; }
-  .ins { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding:8px 12px; border-top:1px solid var(--line); }
+  .modes { margin:6px 16px 2px; }
+  .modes span { padding:7px 4px; font-size:14px; }
+  .build { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .blist { flex:1; min-height:0; overflow-y:auto; list-style:none; margin:0; padding:6px 12px 10px; }
+  .blist li { list-style:none; }
+  .bh, .bs, .bg > .gh { display:flex; align-items:center; gap:10px; border-radius:12px; cursor:pointer; }
+  .bh { padding:12px 6px 4px; font:900 13px/1 var(--brand); font-stretch:125%; letter-spacing:.12em; color:var(--accent); text-transform:uppercase; }
+  .bs { padding:9px 10px; background:var(--panel2); margin:5px 0; }
+  .bs b { font:800 16px "JetBrains Mono", monospace; min-width:5.2ch; }
+  .bs span, .gh span.l { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
+  .bs i, .gh i { font-style:normal; color:var(--muted); font-size:13px; }
+  .bs.sel { outline:2px solid var(--accent); }
+  .bg { margin:6px 0; padding:4px 0 4px 10px; border-left:3px solid var(--accent); }
+  .gh { padding:6px 4px; font-weight:800; }
+  .gh .step { width:30px; height:30px; border-radius:50%; border:0; background:var(--panel2); color:var(--text); font-weight:800; font-size:17px; line-height:1; }
+  .xbtn { border:0; background:none; color:var(--muted); font-size:18px; padding:2px 6px; }
+  .cursor { height:3px; margin:4px 2px; border-radius:2px; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  .bempty { color:var(--muted); font-size:14px; padding:18px 6px; text-align:center; }
+  .composer { flex:none; border-top:1px solid var(--line); padding:6px 0 8px; background:rgba(12,19,32,.5); }
+  .crow { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding:4px 12px; }
+  .crow::-webkit-scrollbar { display:none; }
+  .chip { flex:none; height:36px; min-width:42px; padding:0 12px; border-radius:999px; border:0; background:var(--panel2); color:var(--text); font-size:15px; font-weight:700; }
+  .chip[aria-pressed=true] { background:var(--accent); color:var(--ink); }
+  .chip.ghost { background:none; border:1px dashed var(--line); color:var(--muted); }
+  .chip:active { transform:scale(.94); }
+  .secs { display:flex; gap:6px; }
+  .cgo { display:flex; align-items:center; gap:8px; padding:6px 12px 0; }
+  #cPreview { flex:1; min-width:0; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #cPreview b { font-family:"JetBrains Mono", monospace; }
+  .cgo .btn { height:44px; padding:0 14px; font-size:15px; }
+  .ins:not([hidden]) { display:flex; } .ins { gap:6px; overflow-x:auto; scrollbar-width:none; padding:8px 12px; border-top:1px solid var(--line); }
   .ins button { flex:none; height:36px; min-width:40px; padding:0 12px; border-radius:10px; border:0; background:var(--panel2); font-size:15px; }
   .ins button.k { font-family:"JetBrains Mono", monospace; font-weight:700; color:var(--accent); }
   .ins button:active { transform:scale(.93); }
@@ -229,13 +259,37 @@
         <input class="title" name="heading" aria-label="Title" autocomplete="off" enterkeyhint="next">
         <div class="meta">
           <label class="pill"><input name="date" type="date" aria-label="Date"></label>
-          <label class="pill">Time <input name="time" placeholder="48:30" inputmode="numeric" autocomplete="off" aria-label="Time, like 48:30 or 4830"></label>
+          <label class="pill">Time <input name="time" placeholder="48:30" inputmode="numeric" autocomplete="off" aria-label="Time, like 48:30"></label>
           <label class="pill"><select name="unit" aria-label="Units"><option value="yd">yards</option><option value="m">meters</option></select></label>
           <button type="button" class="pill icon" id="helpBtn" aria-label="How to write a workout">?</button>
         </div>
-        <textarea name="sets" aria-label="Workout, one set per line" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off"
+        <div class="seg modes" role="group" aria-label="Editor">
+          <label><input type="radio" name="emode" value="build" checked><span>Build</span></label>
+          <label><input type="radio" name="emode" value="text"><span>Text</span></label>
+        </div>
+        <div class="build" id="build">
+          <ol class="blist" id="blist" aria-label="Your workout"></ol>
+          <div class="composer">
+            <div class="crow" id="cAdd">
+              <button type="button" class="chip ghost" id="addSection">＋ Section</button>
+              <button type="button" class="chip ghost" id="addRound">＋ Round</button>
+              <span class="secs" id="secChips" hidden></span>
+            </div>
+            <div class="crow" data-k="reps" aria-label="Reps"></div>
+            <div class="crow" data-k="dist" aria-label="Distance"></div>
+            <div class="crow" data-k="stroke" aria-label="Stroke"></div>
+            <div class="crow" data-k="effort" aria-label="Effort"></div>
+            <div class="cgo">
+              <div id="cPreview" aria-live="polite"></div>
+              <button type="button" class="btn quiet" id="cDel" hidden>Delete</button>
+              <button type="button" class="btn quiet" id="cBelow" hidden>Add below</button>
+              <button type="button" class="btn primary" id="cAddBtn">Add</button>
+            </div>
+          </div>
+        </div>
+        <textarea hidden name="sets" aria-label="Workout, one set per line" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off"
           placeholder="Warmup&#10;400 swim&#10;Main&#10;8x100 free @1:30&#10;Cooldown&#10;200 easy"></textarea>
-        <div class="ins" aria-label="Insert"><button type="button" data-ins="x" class=k aria-label="Insert x">×</button><button type="button" data-ins="@" class=k aria-label="Insert @">@</button><button type="button" data-ins="-" class=k aria-label="Insert -">–</button><button type="button" data-ins="free" aria-label="Insert free">free</button><button type="button" data-ins="back" aria-label="Insert back">back</button><button type="button" data-ins="breast" aria-label="Insert breast">breast</button><button type="button" data-ins="fly" aria-label="Insert fly">fly</button><button type="button" data-ins="IM" aria-label="Insert IM">IM</button><button type="button" data-ins="kick" aria-label="Insert kick">kick</button><button type="button" data-ins="pull" aria-label="Insert pull">pull</button><button type="button" data-ins="drill" aria-label="Insert drill">drill</button><button type="button" data-ins="easy" aria-label="Insert easy">easy</button><button type="button" data-ins="Warmup" aria-label="Insert Warmup">Warmup</button><button type="button" data-ins="Main" aria-label="Insert Main">Main</button><button type="button" data-ins="Cooldown" aria-label="Insert Cooldown">Cooldown</button></div>
+        <div class="ins" hidden aria-label="Insert"><button type="button" data-ins="x" class=k aria-label="Insert x">×</button><button type="button" data-ins="@" class=k aria-label="Insert @">@</button><button type="button" data-ins="-" class=k aria-label="Insert -">–</button><button type="button" data-ins="free" aria-label="Insert free">free</button><button type="button" data-ins="back" aria-label="Insert back">back</button><button type="button" data-ins="breast" aria-label="Insert breast">breast</button><button type="button" data-ins="fly" aria-label="Insert fly">fly</button><button type="button" data-ins="IM" aria-label="Insert IM">IM</button><button type="button" data-ins="kick" aria-label="Insert kick">kick</button><button type="button" data-ins="pull" aria-label="Insert pull">pull</button><button type="button" data-ins="drill" aria-label="Insert drill">drill</button><button type="button" data-ins="easy" aria-label="Insert easy">easy</button><button type="button" data-ins="Warmup" aria-label="Insert Warmup">Warmup</button><button type="button" data-ins="Main" aria-label="Insert Main">Main</button><button type="button" data-ins="Cooldown" aria-label="Insert Cooldown">Cooldown</button></div>
       </div>
     </div></div>
   </section>
@@ -305,7 +359,7 @@
   <div class="bigdist"><input id="qDist" inputmode="numeric" autocomplete="off" placeholder="2,000" aria-label="Distance">
     <button type="button" id="qUnit" class="unitbtn" aria-label="Switch yards or meters">yd</button></div>
   <div class="qchips" id="qChips"></div>
-  <label class="pill qtime">Time <input id="qTime" inputmode="numeric" autocomplete="off" placeholder="optional, like 4830" aria-label="Time, optional"></label>
+  <label class="pill qtime">Time <input id="qTime" inputmode="numeric" autocomplete="off" placeholder="optional, like 48:30" aria-label="Time, optional"></label>
   <button type="button" class="btn primary wide" id="qMake">Make my card</button>
   <button type="button" class="linkish wide" id="qSets">Add my sets instead</button>
 </dialog>
@@ -329,7 +383,7 @@
 <canvas id="c" hidden></canvas>
 
 <script type="module">
-import { parseSets, parseTime, fmtTime, pacePer100, fmtNum } from "./sets.mjs";
+import { parseSets, parseTime, fmtTime, pacePer100, fmtNum, serializeSets } from "./sets.mjs";
 
 const f = document.getElementById("f"), cv = document.getElementById("c");
 let ctx = cv.getContext("2d"); // swapped to the Adjust canvas while adjusting
@@ -356,30 +410,9 @@ function btxt(s, x, y, size, { weight = 900, color = "#fff", align = "left" } = 
   if ("fontStretch" in ctx) ctx.fontStretch = "normal";
 }
 
-// Swim House Mafia logo, drawn from the brand SVG's outlined letters so each half can be recolored:
-// SWIM HOUSE readable, MAFIA tonal (barely there), like the embroidery.
-let LOGO = null;
-const logoReady = fetch("brand/shm.svg").then(r => r.text()).then(t => {
-  const top = new Path2D(), bottom = new Path2D();
-  [...new DOMParser().parseFromString(t, "image/svg+xml").querySelectorAll("path")].forEach((p, i) => {
-    const [tx, ty, sx, sy] = p.getAttribute("transform").match(/[-\d.]+/g).map(Number);
-    (i < 9 ? top : bottom).addPath(new Path2D(p.getAttribute("d")), new DOMMatrix([sx, 0, 0, sy, tx, ty]));
-  });
-  LOGO = { top, bottom };
-}).catch(() => {});
+
 // Product wordmark for card footers: SWIMSHOT, with the parent brand underneath.
-function wordmark(x, y, align = "left") {
-  btxt("SWIMSHOT", x, y - 16, 30, { color: "rgba(243,235,221,.9)", align });
-  txt("BY SWIM HOUSE MAFIA", x, y + 14, 17, { weight: 600, color: "rgba(243,235,221,.5)", align, spacing: 3 });
-}
-// Draws the logo `w` wide with its top-left (or top-center) at x,y. Letters span x 100-1100, y 176-462 in the SVG.
-function logo(x, y, w, { color = "#F3EBDD", tonal = "rgba(255,255,255,.13)", align = "left" } = {}) {
-  if (!LOGO) return;
-  const s = w / 1000;
-  ctx.save(); ctx.translate(align === "center" ? x - w / 2 : x, y); ctx.scale(s, s); ctx.translate(-100, -176);
-  ctx.fillStyle = tonal; ctx.fill(LOGO.bottom); ctx.fillStyle = color; ctx.fill(LOGO.top);
-  ctx.restore();
-}
+function wordmark(x, y, align = "left") { btxt("SWIMSHOT", x, y, 30, { color: "rgba(243,235,221,.9)", align }); }
 
 function clip(s, maxW) { // ellipsize to width using current font
   if (ctx.measureText(s).width <= maxW) return s;
@@ -671,7 +704,7 @@ function drawWhiteboard(W, H, unit, { rows, total, secs, date }) {
   ctx.strokeStyle = RED; ctx.lineWidth = 5; ctx.beginPath(); // scribbled circle
   ctx.ellipse(tx + tw / 2, y - size * 0.35, tw / 2 + 30, size * 0.85, -0.04, 0.2, Math.PI * 2.1); ctx.stroke();
   if (secs) ft(`${fmtTime(secs)}${total ? `  ·  ${pacePer100(secs, total)}/100` : ""}`, L, y + size * 1.4, size * 0.8, INK, MK);
-  logo(R - 190, by + bh - 96, 190, { color: INK, tonal: "rgba(31,42,68,.13)" });
+  btxt("SWIMSHOT", R, by + bh - 46, 26, { color: INK, align: "right" });
   ctx.restore();
 }
 
@@ -786,7 +819,7 @@ function drawFacts(W, H, unit, { rows, total, secs, date }) {
   y += 40 * s;
   ft("* Percent of today's workout. Not a significant", L, y, 24 * s, ink, I);
   ft("source of rest. Contains chlorine.", L, y + 32 * s, 24 * s, ink, I);
-  ft("Distributed by Swim House Mafia.", L, y + 64 * s, 24 * s, ink, I, { weight: 800 });
+  ft("Distributed by Swimshot.", L, y + 64 * s, 24 * s, ink, I, { weight: 800 });
 }
 
 
@@ -1122,7 +1155,7 @@ function drawNews(W, H, accent, unit, { rows, total, secs, date }) {
     });
   }
   ctx.font = `italic 400 22px ${BODY}`; ctx.textAlign = "center";
-  ctx.fillText("Continued on page A4  ·  Swimshot by Swim House Mafia", W / 2, py + phh - 46);
+  ctx.fillText("Continued on page A4  ·  Swimshot", W / 2, py + phh - 46);
 }
 
 // Stats sticker: one compact panel. Move/resize it with Adjust > Text.
@@ -1258,7 +1291,7 @@ function drawLaneLine(W, H, accent, unit, { rows, total, secs, date }) {
 
 // Paper receipt: one line item per set, totals at the bottom.
 function drawReceipt(W, H, accent, unit, { rows, total, secs, date }) {
-  const lines = [["c", "SWIMSHOT", true], ["c", "by Swim House Mafia"], ["c", f.heading.value.toUpperCase()], ["c", date], ["-"]];
+  const lines = [["c", "SWIMSHOT", true], ["c", f.heading.value.toUpperCase()], ["c", date], ["-"]];
   for (const r of rows) {
     if (r.heading) lines.push(["l", `** ${r.heading.toUpperCase()} **`, true]);
     else if (r.group) {
@@ -1452,7 +1485,7 @@ const sheet = $("sheet"), app = $("app");
 function openSheet(open = !sheet.classList.contains("open"), focus = true) {
   sheet.classList.toggle("open", open); app.classList.toggle("editing", open);
   $("done").hidden = !open; $("save").hidden = open;
-  if (open && focus) f.sets.focus({ preventScroll: true });
+  if (open) f.emode.value === "text" ? focus && f.sets.focus({ preventScroll: true }) : renderBuilder();
   if (!open) {
     document.activeElement?.blur(); app.classList.remove("typing");
     requestAnimationFrame(() => { $("carousel").scrollLeft = idx * $("carousel").clientWidth; }); // restore the look you were on
@@ -1483,6 +1516,132 @@ function summarize() {
   return total;
 }
 
+// ---- builder: tap to build sets. The text stays the source of truth: parse -> edit rows -> serialize. ----
+const STROKES = ["free", "back", "breast", "fly", "IM", "kick", "pull", "drill", "choice"];
+const EFFORTS = ["easy", "medium", "fast", "all out"];
+const CHIPS = { reps: [1, 2, 3, 4, 5, 6, 8, 10, "…"], dist: [25, 50, 75, 100, 150, 200, 300, 400, 500, 800, 1000, "…"], stroke: STROKES, effort: EFFORTS };
+const comp = { reps: 1, dist: 100, stroke: "free", effort: "", extra: "" };
+let cursor = null;   // {g: round index | null, k: insert index}; null = end of the workout
+let editPath = null; // [i] or [i, j] of the set loaded into the composer
+const SECTIONS = ["Warmup", "Pre-set", "Main", "Kick", "Pull", "Cooldown", "Other…"];
+
+const rowsNow = () => parseSets(f.sets.value).rows;
+function commit(rows) { f.sets.value = serializeSets(rows); changed(); renderBuilder(); }
+const compLabel = () => [comp.stroke, comp.effort, comp.extra].filter(Boolean).join(" ");
+const compSet = () => ({ reps: comp.reps, dist: comp.dist, label: compLabel() });
+function splitLabel(label = "") { // "Free fast @1:30" -> { stroke: "free", effort: "fast", extra: "@1:30" }
+  let rest = label, stroke = "", effort = "";
+  for (const e of EFFORTS) { const m = rest.match(new RegExp(`\\b${e}\\b`, "i")); if (m) { effort = e; rest = rest.replace(m[0], ""); break; } }
+  const first = rest.trim().split(/\s+/)[0] || "", s = STROKES.find(x => x.toLowerCase() === first.toLowerCase());
+  if (s) { stroke = s; rest = rest.trim().slice(first.length); }
+  return { stroke, effort, extra: rest.trim().replace(/\s+/g, " ") };
+}
+function where(rows) { // resolved insertion point
+  if (cursor && cursor.g != null && !rows[cursor.g]?.group) cursor = null;
+  return cursor || { g: null, k: rows.length };
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const setHTML = (r, path) => `<li class="bs${editPath + "" === path + "" ? " sel" : ""}" data-p="${path}"><b>${r.reps > 1 ? r.reps + "×" : ""}${r.dist}</b><span>${esc(r.label)}</span><i>${fmtNum(r.reps * r.dist)}</i></li>`;
+
+function renderBuilder() {
+  const rows = rowsNow(), c = where(rows), CUR = '<li class="cursor" aria-label="New sets go here"></li>';
+  let html = "";
+  rows.forEach((r, i) => {
+    if (c.g == null && c.k === i) html += CUR;
+    if (r.heading) html += `<li class="bh" data-h="${i}">${esc(r.heading)}<button type="button" class="xbtn" data-delh="${i}" aria-label="Remove ${esc(r.heading)}">×</button></li>`;
+    else if (r.group) {
+      let inner = "";
+      r.items.forEach((it, j) => { if (c.g === i && c.k === j) inner += CUR; if (!it.heading) inner += setHTML(it, [i, j]); });
+      if (c.g === i && c.k >= r.items.length) inner += CUR;
+      html += `<li class="bg"><div class="gh" data-g="${i}"><button type="button" class="step" data-rd="${i}" aria-label="Fewer rounds">−</button>
+        <span class="l">${r.reps}× round${r.label ? " · " + esc(r.label) : ""}</span><i>${fmtNum(r.reps * r.dist)}</i>
+        <button type="button" class="step" data-ru="${i}" aria-label="More rounds">+</button><button type="button" class="xbtn" data-delg="${i}" aria-label="Remove round">×</button></div>
+        <ol>${inner || '<li class="bempty" style="padding:8px">Add sets to this round ↓</li>'}</ol></li>`;
+    } else html += setHTML(r, [i]);
+  });
+  if (c.g == null && c.k >= rows.length) html += CUR;
+  $("blist").innerHTML = rows.length ? html : `<li class="bempty">Pick reps, distance and stroke below, then <b>Add</b>.<br>Use ＋ Section for Warmup / Main / Cooldown.</li>`;
+  // composer
+  for (const row of document.querySelectorAll(".crow[data-k]")) {
+    const k = row.dataset.k, opts = CHIPS[k], custom = (k === "reps" || k === "dist") && !opts.includes(comp[k]);
+    row.innerHTML = opts.map(o => {
+      const on = o === "…" ? custom : comp[k] === o, lab = o === "…" && custom ? comp[k] : o;
+      return `<button type="button" class="chip" data-v="${o}" aria-pressed="${on}">${k === "reps" && o !== "…" ? o + "×" : lab}</button>`;
+    }).join("");
+  }
+  $("cPreview").innerHTML = `<b>${comp.reps > 1 ? comp.reps + "×" : ""}${comp.dist}</b> ${esc(compLabel())}`;
+  $("cAddBtn").textContent = editPath ? "Update" : c.g != null ? "Add to round" : "Add";
+  $("cDel").hidden = $("cBelow").hidden = !editPath;
+  $("blist").querySelector(".cursor, .sel")?.scrollIntoView({ block: "nearest" });
+}
+
+document.querySelector(".composer").addEventListener("click", e => {
+  const b = e.target.closest(".chip[data-v]"); if (!b) return;
+  const k = b.closest(".crow").dataset.k; let v = b.dataset.v;
+  if (v === "…") { const n = parseInt(prompt(k === "reps" ? "How many reps?" : "Distance?", comp[k]), 10); if (!(n > 0)) return; v = n; }
+  comp[k] = k === "reps" || k === "dist" ? +v : comp[k] === v && k === "effort" ? "" : v; // tap effort again to clear it
+  renderBuilder();
+});
+$("cAddBtn").onclick = () => {
+  const rows = rowsNow();
+  if (editPath) { // update in place
+    const [i, j] = editPath;
+    if (j == null) rows[i] = compSet(); else rows[i].items[j] = compSet();
+    editPath = null; return commit(rows);
+  }
+  const c = where(rows), s = compSet();
+  if (c.g != null) rows[c.g].items.splice(c.k, 0, s); else rows.splice(c.k, 0, s);
+  if (cursor) cursor = { g: c.g, k: c.k + 1 }; // keep adding after what you just added
+  commit(rows);
+};
+$("cDel").onclick = () => {
+  const rows = rowsNow(), [i, j] = editPath;
+  if (j == null) rows.splice(i, 1); else rows[i].items.splice(j, 1);
+  editPath = null; cursor = null; commit(rows);
+};
+$("cBelow").onclick = () => { const [i, j] = editPath; cursor = j == null ? { g: null, k: i + 1 } : { g: i, k: j + 1 }; editPath = null; $("cAddBtn").click(); };
+$("addRound").onclick = () => {
+  const rows = rowsNow(), c = where(rows), k = c.g != null ? c.g + 1 : c.k; // never nest rounds
+  rows.splice(k, 0, { group: true, reps: 3, label: "", dist: 0, items: [] });
+  cursor = { g: k, k: 0 }; editPath = null; commit(rows);
+};
+$("addSection").onclick = () => {
+  $("secChips").hidden = !$("secChips").hidden;
+  $("secChips").innerHTML = SECTIONS.map(s => `<button type="button" class="chip" data-sec="${s}">${s}</button>`).join("");
+};
+$("secChips").addEventListener("click", e => {
+  let name = e.target.dataset.sec; if (!name) return;
+  if (name === "Other…") { name = prompt("Section name?", ""); if (!name?.trim()) return; name = name.trim(); }
+  const rows = rowsNow(), c = where(rows), k = c.g != null ? c.g + 1 : c.k;
+  rows.splice(k, 0, { heading: name });
+  cursor = k + 1 >= rows.length ? null : { g: null, k: k + 1 }; editPath = null;
+  $("secChips").hidden = true; commit(rows);
+});
+$("blist").addEventListener("click", e => {
+  const rows = rowsNow(), t = e.target;
+  if (t.dataset.delh != null) { rows.splice(+t.dataset.delh, 1); cursor = editPath = null; return commit(rows); }
+  if (t.dataset.delg != null) { if (rows[+t.dataset.delg].items.length && !confirm("Remove this round and its sets?")) return; rows.splice(+t.dataset.delg, 1); cursor = editPath = null; return commit(rows); }
+  if (t.dataset.rd != null || t.dataset.ru != null) { const g = rows[+(t.dataset.rd ?? t.dataset.ru)]; g.reps = Math.max(1, g.reps + (t.dataset.ru != null ? 1 : -1)); return commit(rows); }
+  const s = t.closest(".bs"), h = t.closest(".bh"), g = t.closest(".gh");
+  if (s) { // load the set into the composer
+    const path = s.dataset.p.split(",").map(Number), r = path.length > 1 ? rows[path[0]].items[path[1]] : rows[path[0]];
+    if (editPath + "" === path + "") { editPath = null; return renderBuilder(); } // tap again to deselect
+    editPath = path; Object.assign(comp, { reps: r.reps, dist: r.dist }, splitLabel(r.label)); return renderBuilder();
+  }
+  if (h) { // new sets go at the end of this section
+    const i = +h.dataset.h; let k = i + 1; while (k < rows.length && !rows[k].heading) k++;
+    cursor = k >= rows.length ? null : { g: null, k }; editPath = null; return renderBuilder();
+  }
+  if (g) { const i = +g.dataset.g; cursor = { g: i, k: rows[i].items.length }; editPath = null; return renderBuilder(); }
+});
+function setMode(m) {
+  f.emode.value = m;
+  const text = m === "text";
+  $("build").hidden = text; f.sets.hidden = !text; document.querySelector(".ins").hidden = !text;
+  if (text) f.sets.focus({ preventScroll: true }); else { document.activeElement?.blur(); cursor = editPath = null; renderBuilder(); }
+}
+f.emode.forEach(r => r.addEventListener("change", e => { e.stopPropagation(); setMode(r.value); }));
+
 // Insert bar: keeps the keyboard open and adds sensible spacing/newlines.
 document.querySelectorAll("[data-ins]").forEach(b => {
   b.onpointerdown = e => e.preventDefault();
@@ -1501,6 +1660,12 @@ document.querySelectorAll("[data-ins]").forEach(b => {
 });
 
 function changed() { summarize(); persist(); renderSoon(); }
+// Time field: the iPhone number pad has no ":", so format digits as you type: 4830 -> 48:30, 11500 -> 1:15:00
+const colonize = el => el.addEventListener("input", () => {
+  const d = el.value.replace(/\D/g, "").replace(/^0+(?=\d{3})/, "").slice(0, 6);
+  el.value = d.length <= 2 ? d : d.length <= 4 ? `${d.slice(0, -2)}:${d.slice(-2)}` : `${d.slice(0, -4)}:${d.slice(-4, -2)}:${d.slice(-2)}`;
+});
+colonize(f.time); colonize($("qTime"));
 f.addEventListener("input", e => { if (e.target.name !== "photo" && !e.target.closest("#adjust, #quickSheet")) changed(); });
 
 // Keep the sheet above the iPhone keyboard: size the app to the visible viewport.
@@ -1782,7 +1947,7 @@ showHome(true);
 renderAll(); renderFan();
 
 fetch("/api/form").then(r => r.ok ? r.json() : Promise.reject()).then(d => { form = d; buildCarousel(); renderAll(); }).catch(() => {});
-Promise.all([logoReady, ...["800 64px Inter", "400 46px Inter", "600 34px Inter", "900 90px Inter", "700 34px \"JetBrains Mono\"",
+Promise.all([...["800 64px Inter", "400 46px Inter", "600 34px Inter", "900 90px Inter", "700 34px \"JetBrains Mono\"",
   "400 34px \"JetBrains Mono\"", "400 50px \"Permanent Marker\"", "400 50px VT323", "900 expanded 64px Archivo", "800 expanded 64px Archivo",
   "900 90px \"Playfair Display\"", "italic 400 36px \"Playfair Display\"", "400 100px UnifrakturMaguntia"]
   .map(s => document.fonts.load(s).catch(() => {}))])

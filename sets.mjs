@@ -38,6 +38,21 @@ export function parseSets(text) {
   return { rows, total: rows.reduce((t, r) => t + (r.heading ? 0 : r.reps * r.dist), 0) };
 }
 
+// Rows -> text, for the builder. parseSets(serializeSets(rows)) gives the same rows back.
+const setLine = r => `${r.reps > 1 ? r.reps + "x" : ""}${r.dist}${r.label ? " " + r.label : ""}`;
+export function serializeSets(rows) {
+  const out = [];
+  for (const r of rows) {
+    if (r.heading) out.push(r.heading);
+    else if (r.group) {
+      out.push(`${r.reps}x${r.label ? " " + r.label : ""}`);
+      for (const it of r.items) out.push("- " + (it.heading || setLine(it)));
+      if (!r.items.length) out.push(""); // an empty round would otherwise swallow the next unmarked set
+    } else out.push(setLine(r));
+  }
+  return out.join("\n");
+}
+
 // "1:05:30" | "55:00" | "55" (minutes) | "4830" (48:30) | "12000" (1:20:00) -> seconds; "" -> 0
 // Colon-free digits exist because the iPhone number pad has no ":".
 export function parseTime(s) {
