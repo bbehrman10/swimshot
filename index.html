@@ -177,6 +177,8 @@
   #adjCv:active { cursor:grabbing; }
   .adj-zoom { display:flex; align-items:center; gap:10px; color:var(--muted); padding:0 6px; }
   .adj-actions { display:flex; gap:8px; }
+  .rot { flex:none; width:40px; height:40px; display:grid; place-items:center; border:0; border-radius:50%; background:var(--panel2); color:var(--text); }
+  .rot svg { width:20px; height:20px; }
   .adj-actions .btn { flex:1; justify-content:center; padding:0 10px; }
 
   /* full-screen card viewer: press-and-hold saves to Photos (works without https) */
@@ -315,7 +317,9 @@
     <div class="adj-stage"><canvas id="adjCv" aria-label="Photo framing. Drag to move, pinch or scroll to zoom."></canvas></div>
     <label class="adj-zoom"><svg viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6"/></svg>
       <input type="range" id="zoom" min="100" max="400" value="100" aria-label="Zoom">
-      <svg viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6M11 8v6"/></svg></label>
+      <svg viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5M8 11h6M11 8v6"/></svg>
+      <button type="button" class="rot" id="rotL" aria-label="Rotate left 15 degrees"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></svg></button>
+      <button type="button" class="rot" id="rotR" aria-label="Rotate right 15 degrees"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg></button></label>
     <div class="adj-actions">
       <button type="button" class="btn quiet" id="adjReset">Reset</button>
       <button type="button" class="btn quiet" id="adjHide" hidden>Hide</button>
@@ -475,18 +479,20 @@ function footer(W, H, M, right) {
 
 // ---- movable parts (Classic / Bars / Minimal): each layout keeps its own offsets, scale, hidden ----
 const parts = {};            // {layout: {name: {x, y, s, hide}}}
-let boxes = {};              // name -> [x, y, w, h] on the card, filled while drawing (before the whole-text transform)
+let boxes = {};              // name -> {box: [x, y, w, h] unscaled, anchor, offset, scale, rotation}, filled while drawing
 const lastBox = {};          // remembered boxes so hidden parts can still be found and tapped
 // Draws one part scaled around anchor (ax, ay) and moved by its offset. draw() returns its unscaled box.
 function part(name, ax, ay, draw) {
-  const b = parts[cur.layout]?.[name] || {}, s = b.s || 1, dx = b.x || 0, dy = b.y || 0;
+  const b = parts[cur.layout]?.[name] || {}, s = b.s || 1, dx = b.x || 0, dy = b.y || 0, r = (b.r || 0) * Math.PI / 180;
   let box = lastBox[cur.layout + name];
+  // pivot = center of the part (scaled about its anchor), so it turns in place like a sticker
+  const pv = box ? [ax + (box[0] + box[2] / 2 - ax) * s, ay + (box[1] + box[3] / 2 - ay) * s] : [ax, ay];
+  const tf = c => { c.translate(dx + pv[0], dy + pv[1]); c.rotate(r); c.translate(-pv[0] + ax, -pv[1] + ay); c.scale(s, s); c.translate(-ax, -ay); };
   if (!b.hide) {
-    ctx.save(); ctx.translate(ax + dx, ay + dy); ctx.scale(s, s); ctx.translate(-ax, -ay);
-    box = draw(); ctx.restore();
+    ctx.save(); tf(ctx); box = draw(); ctx.restore();
     lastBox[cur.layout + name] = box;
   }
-  if (box) boxes[name] = [ax + dx + (box[0] - ax) * s, ay + dy + (box[1] - ay) * s, box[2] * s, box[3] * s, !!b.hide];
+  if (box) boxes[name] = { box, ax, ay, dx, dy, s, r, pv, tf, hidden: !!b.hide };
 }
 
 // ---- cards ----
@@ -1394,7 +1400,7 @@ function paintCard(c, s, scale, { shadow = true } = {}) {
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   background(W, H, f.sticker.checked);
   ctx.shadowColor = shadow ? "rgba(0,0,0,.45)" : "transparent"; ctx.shadowBlur = 18 * scale; ctx.shadowOffsetY = 2;
-  ctx.save(); ctx.translate(W / 2 + ovl.x, H / 2 + ovl.y); ctx.scale(ovl.s, ovl.s); ctx.translate(-W / 2, -H / 2);
+  ctx.save(); ctx.translate(W / 2 + ovl.x, H / 2 + ovl.y); ctx.rotate((ovl.r || 0) * Math.PI / 180); ctx.scale(ovl.s, ovl.s); ctx.translate(-W / 2, -H / 2);
   if (s.stats) { cur.period = s.period; drawStats(W, H, accent, unit); }
   else { cur.layout = s.layout; drawWorkout(W, H, accent, unit); }
   ctx.restore();
@@ -1695,7 +1701,7 @@ $("adjReplace").onclick = () => f.photo.click();
 $("adjReset").onclick = () => {
   if (adjTarget() === "photo") Object.assign(frame, { zoom: 1, fx: 0.5, fy: 0.5 });
   else if (sel) delete parts[cur.layout][sel];
-  else { Object.assign(ovl, { s: 1, x: 0, y: 0 }); delete parts[cur.layout]; } // nothing selected: reset this layout entirely
+  else { Object.assign(ovl, { s: 1, x: 0, y: 0, r: 0 }); delete parts[cur.layout]; } // nothing selected: reset this layout entirely
   syncZoom(); paintAdjust();
 };
 $("adjDone").onclick = () => closeAdjust();
@@ -1738,8 +1744,9 @@ function syncZoom() { // the slider follows whatever you're adjusting
   z.value = Math.round((t === "photo" ? frame.zoom : onPart ? (partState().s || 1) : ovl.s) * 100);
   const hasParts = Object.keys(adjBoxes).length > 0;
   $("adjHint").textContent = t === "photo" ? "Drag to move · pinch to zoom"
-    : onPart ? `${PART_NAMES[sel]} · drag to move · pinch to resize` : hasParts ? "Tap a part to move it on its own · or drag everything" : "Drag to move · pinch to resize";
+    : onPart ? `${PART_NAMES[sel]} · drag · pinch to resize · twist to rotate` : hasParts ? "Tap a part to move it on its own · or drag everything" : "Drag · pinch to resize · twist to rotate";
   $("adjHide").hidden = !onPart;
+  $("rotL").hidden = $("rotR").hidden = t !== "text";
   $("adjHide").textContent = onPart && partState().hide ? "Show" : "Hide";
 }
 function openAdjust(what = "text") {
@@ -1767,13 +1774,15 @@ function paintAdjust() {
     adjBoxes = boxes;
     if (adjTarget() !== "text") return;
     actx.setTransform(ADJ, 0, 0, ADJ, 0, 0); // outlines for the movable parts
-    actx.translate(W / 2 + ovl.x, H / 2 + ovl.y); actx.scale(ovl.s, ovl.s); actx.translate(-W / 2, -H / 2);
-    for (const [name, [x, y, w, hh, hidden]] of Object.entries(adjBoxes)) {
-      const on = name === sel;
-      actx.setLineDash(on ? [] : [14, 10]); actx.lineWidth = (on ? 5 : 3) / ovl.s;
-      actx.strokeStyle = on ? f.accent.value : hidden ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.55)";
+    actx.translate(W / 2 + ovl.x, H / 2 + ovl.y); actx.rotate((ovl.r || 0) * Math.PI / 180); actx.scale(ovl.s, ovl.s); actx.translate(-W / 2, -H / 2);
+    for (const [name, p] of Object.entries(adjBoxes)) {
+      const on = name === sel, [x, y, w, hh] = p.box, k = ovl.s * p.s;
+      actx.save(); p.tf(actx);
+      actx.setLineDash(on ? [] : [14 / k, 10 / k]); actx.lineWidth = (on ? 5 : 3) / k;
+      actx.strokeStyle = on ? f.accent.value : p.hidden ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.55)";
       actx.beginPath(); actx.roundRect(x, y, w, hh, 14); actx.stroke();
-      if (hidden) { actx.font = `700 ${28 / ovl.s}px Inter`; actx.fillStyle = "rgba(255,255,255,.7)"; actx.fillText("hidden · tap to show", x + 16, y + hh / 2 + 10); }
+      if (p.hidden) { actx.font = `700 ${28 / k}px Inter`; actx.fillStyle = "rgba(255,255,255,.7)"; actx.fillText("hidden · tap to show", x + 16, y + hh / 2 + 10); }
+      actx.restore();
     }
     actx.setLineDash([]); actx.setTransform(1, 0, 0, 1, 0, 0);
   });
@@ -1782,8 +1791,14 @@ const PART_NAMES = { head: "Title", sets: "Sets", big: "Distance", stats: "Time 
 function partState() { return (parts[cur.layout] ||= {})[sel] ||= {}; }
 function selectAt(clientX, clientY) { // pointer -> card coords -> undo whole-text transform -> hit test
   const [W, H] = SIZES[f.size.value], r = adj.getBoundingClientRect(), k = W / r.width;
-  const cx = ((clientX - r.left) * k - (W / 2 + ovl.x)) / ovl.s + W / 2, cy = ((clientY - r.top) * k - (H / 2 + ovl.y)) / ovl.s + H / 2;
-  const hit = ["mark", "stats", "big", "head", "sets"].find(n => { const b = adjBoxes[n]; return b && cx >= b[0] && cx <= b[0] + b[2] && cy >= b[1] && cy <= b[1] + b[3]; });
+  const unrot = (x, y, a) => [x * Math.cos(-a) - y * Math.sin(-a), x * Math.sin(-a) + y * Math.cos(-a)];
+  let [cx, cy] = unrot((clientX - r.left) * k - (W / 2 + ovl.x), (clientY - r.top) * k - (H / 2 + ovl.y), (ovl.r || 0) * Math.PI / 180);
+  cx = cx / ovl.s + W / 2; cy = cy / ovl.s + H / 2;
+  const hit = ["mark", "stats", "big", "head", "sets"].find(n => {
+    const p = adjBoxes[n]; if (!p) return false;
+    let [x, y] = unrot(cx - p.dx - p.pv[0], cy - p.dy - p.pv[1], p.r); x = (x + p.pv[0] - p.ax) / p.s + p.ax; y = (y + p.pv[1] - p.ay) / p.s + p.ay;
+    const [bx, by, bw, bh] = p.box; return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+  });
   sel = hit || null; syncZoom(); paintAdjust();
 }
 // gestures: one finger pans, two fingers pinch-zoom (around their midpoint), wheel zooms
@@ -1799,7 +1814,8 @@ const zoomNow = () => adjTarget() === "photo" ? frame.zoom : sel ? (partState().
 function pan(dx, dy) {
   const [W, H] = SIZES[f.size.value], k = W / adj.getBoundingClientRect().width;
   if (adjTarget() === "text" && sel) {
-    const b = partState(); b.x = Math.max(-W, Math.min(W, (b.x || 0) + dx * k / ovl.s)); b.y = Math.max(-H, Math.min(H, (b.y || 0) + dy * k / ovl.s));
+    const a = -(ovl.r || 0) * Math.PI / 180, ux = (dx * Math.cos(a) - dy * Math.sin(a)) * k / ovl.s, uy = (dx * Math.sin(a) + dy * Math.cos(a)) * k / ovl.s;
+    const b = partState(); b.x = Math.max(-W, Math.min(W, (b.x || 0) + ux)); b.y = Math.max(-H, Math.min(H, (b.y || 0) + uy));
     return paintAdjust();
   }
   if (adjTarget() === "text") { // keep at least part of the text on the card
@@ -1816,10 +1832,19 @@ function pan(dx, dy) {
 const gesture = () => {
   const p = [...pts.values()];
   if (p.length === 1) return { x: p[0].x, y: p[0].y, d: 0 };
-  return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) };
+  return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y),
+           a: Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x) * 180 / Math.PI };
 };
+// Rotation (degrees) of whatever Text mode is adjusting: the selected part, or the whole text block.
+const rotNow = () => (sel ? partState().r : ovl.r) || 0;
+function setRot(deg, snap = false) {
+  deg = ((deg + 540) % 360) - 180;
+  if (snap) { const q = Math.round(deg / 90) * 90; if (Math.abs(deg - q) < 3) deg = q; } // settle to straight
+  if (sel) partState().r = deg; else ovl.r = deg;
+  paintAdjust();
+}
 adj.addEventListener("pointerdown", e => {
-  adj.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = gesture();
+  try { adj.setPointerCapture(e.pointerId); } catch {} pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = gesture();
   if (pts.size === 1 && adjTarget() === "text") selectAt(e.clientX, e.clientY); // first finger picks the part
   dragging = true;
 });
@@ -1827,16 +1852,21 @@ adj.addEventListener("pointermove", e => {
   if (!pts.has(e.pointerId)) return;
   pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
   const g = gesture();
-  if (last && g.d && last.d) setZoom(zoomNow() * g.d / last.d);
+  if (last && g.d && last.d) {
+    setZoom(zoomNow() * g.d / last.d);
+    if (adjTarget() === "text") { let da = g.a - last.a; if (da > 180) da -= 360; if (da < -180) da += 360; setRot(rotNow() + da); }
+  }
   if (last) pan(g.x - last.x, g.y - last.y);
   last = g;
 });
-const lift = e => { pts.delete(e.pointerId); last = pts.size ? gesture() : null; if (!pts.size) { dragging = false; paintAdjust(); } };
+const lift = e => { pts.delete(e.pointerId); last = pts.size ? gesture() : null; if (!pts.size) { dragging = false; if (adjTarget() === "text") setRot(rotNow(), true); paintAdjust(); } };
 adj.addEventListener("pointerup", lift); adj.addEventListener("pointercancel", lift);
 adj.addEventListener("wheel", e => { e.preventDefault(); setZoom(zoomNow() * Math.exp(-e.deltaY / 400)); }, { passive: false });
 f.adjWhat.forEach(r => r.addEventListener("change", e => { e.stopPropagation(); sel = null; syncZoom(); paintAdjust(); }));
 $("adjHide").onclick = () => { const b = partState(); b.hide = !b.hide; syncZoom(); paintAdjust(); };
 $("zoom").addEventListener("input", e => { e.stopPropagation(); setZoom(e.target.value / 100); });
+const step = d => setRot(Math.round((rotNow() + d) / 15) * 15); // 15° steps, landing on clean angles
+$("rotL").onclick = () => step(-15); $("rotR").onclick = () => step(15);
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("adjust").hidden) closeAdjust(); });
 
 // ---- share ----
