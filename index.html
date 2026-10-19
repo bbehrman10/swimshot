@@ -393,6 +393,7 @@
     <tr><td><code>Warmup</code></td><td>No distance = section heading</td></tr>
     <tr><td><code>3x</code><br><code>- 100 free</code><br><code>- 2x50 fly</code></td><td>A round, done 3 times. Start its sets with <code>-</code>. A blank line or the next line without <code>-</code> ends it</td></tr>
   </table>
+  <p>Mixed set? In the builder, turn on <b>＋ Mix</b>, then tap strokes in order: <code>FL</code> then <code>FR</code> gives <code>4x100 FL/FR</code>.</p>
   <p>Time: <code>48:30</code> or just <code>4830</code>. The buttons above the keyboard type <code>x</code>, <code>@</code> and <code>-</code> for you.</p>
   <button type="button" class="linkish" id="example">Use an example workout</button>
   <button type="button" class="btn primary wide" data-close>Got it</button>
@@ -1543,8 +1544,8 @@ const STROKES = ["FR", "BK", "BR", "FL", "IM", "kick", "pull", "drill", "choice"
 const STROKE_ALIASES = { free: "FR", freestyle: "FR", fr: "FR", back: "BK", backstroke: "BK", bk: "BK", breast: "BR", breaststroke: "BR", br: "BR",
   fly: "FL", butterfly: "FL", fl: "FL", im: "IM", kick: "kick", k: "kick", pull: "pull", p: "pull", drill: "drill", dr: "drill", choice: "choice", ch: "choice" };
 const EFFORTS = ["easy", "medium", "fast", "all out"];
-const CHIPS = { reps: [1, 2, 3, 4, 5, 6, 8, 10, "…"], dist: [25, 50, 75, 100, 150, 200, 300, 400, 500, 800, 1000, "…"], stroke: STROKES, effort: EFFORTS };
-const comp = { reps: 1, dist: 100, stroke: "FR", effort: "", extra: "" };
+const CHIPS = { reps: [1, 2, 3, 4, 5, 6, 8, 10, "…"], dist: [25, 50, 75, 100, 150, 200, 300, 400, 500, 800, 1000, "…"], stroke: [...STROKES, "Mix"], effort: EFFORTS };
+const comp = { reps: 1, dist: 100, stroke: "FR", effort: "", extra: "", mix: false }; // mix: stroke chips multi-select
 let cursor = null;   // {g: round index | null, k: insert index}; null = end of the workout
 let editPath = null; // [i] or [i, j] of the set loaded into the composer
 let quickSeed = false; // workout is just the "I swam today" distance: the first built set replaces it
@@ -1557,7 +1558,8 @@ const compSet = () => ({ reps: comp.reps, dist: comp.dist, label: compLabel() })
 function splitLabel(label = "") { // "Free fast @1:30" -> { stroke: "free", effort: "fast", extra: "@1:30" }
   let rest = label, stroke = "", effort = "";
   for (const e of EFFORTS) { const m = rest.match(new RegExp(`\\b${e}\\b`, "i")); if (m) { effort = e; rest = rest.replace(m[0], ""); break; } }
-  const first = rest.trim().split(/\s+/)[0] || "", s = STROKE_ALIASES[first.toLowerCase()];
+  const first = rest.trim().split(/\s+/)[0] || "", parts = first.split("/").map(x => STROKE_ALIASES[x.toLowerCase()]);
+  const s = parts.every(Boolean) ? parts.join("/") : "";
   if (s) { stroke = s; rest = rest.trim().slice(first.length); }
   return { stroke, effort, extra: rest.trim().replace(/\s+/g, " ") };
 }
@@ -1590,7 +1592,7 @@ function renderBuilder() {
   for (const row of document.querySelectorAll(".crow[data-k]")) {
     const k = row.dataset.k, opts = CHIPS[k], custom = (k === "reps" || k === "dist") && !opts.includes(comp[k]);
     row.innerHTML = opts.map(o => {
-      const on = o === "…" ? custom : comp[k] === o, lab = o === "…" && custom ? comp[k] : o;
+      const on = o === "…" ? custom : o === "Mix" ? comp.mix : k === "stroke" ? comp.stroke.split("/").includes(o) : comp[k] === o, lab = o === "…" && custom ? comp[k] : o === "Mix" ? "＋ Mix" : o;
       return `<button type="button" class="chip" data-v="${o}" aria-pressed="${on}">${k === "reps" && o !== "…" ? o + "×" : lab}</button>`;
     }).join("");
   }
@@ -1604,7 +1606,12 @@ document.querySelector(".composer").addEventListener("click", e => {
   const b = e.target.closest(".chip[data-v]"); if (!b) return;
   const k = b.closest(".crow").dataset.k; let v = b.dataset.v;
   if (v === "…") { const n = parseInt(prompt(k === "reps" ? "How many reps?" : "Distance?", comp[k]), 10); if (!(n > 0)) return; v = n; }
-  comp[k] = k === "reps" || k === "dist" ? +v : comp[k] === v && k === "effort" ? "" : v; // tap effort again to clear it
+  if (k === "stroke") {
+    const on = comp.stroke ? comp.stroke.split("/") : [];
+    if (v === "Mix") { comp.mix = !comp.mix; if (!comp.mix) comp.stroke = on[0] || ""; } // Mix off: keep the first stroke
+    else if (!comp.mix) comp.stroke = comp.stroke === v ? "" : v;                        // single pick (tap again to clear)
+    else comp.stroke = (on.includes(v) ? on.filter(s => s !== v) : [...on, v]).join("/"); // mixed, in tap order: FL then FR -> "FL/FR"
+  } else comp[k] = k === "reps" || k === "dist" ? +v : comp[k] === v && k === "effort" ? "" : v; // tap effort again to clear it
   renderBuilder();
 });
 $("cAddBtn").onclick = () => {
@@ -1654,7 +1661,7 @@ $("blist").addEventListener("click", e => {
   if (s) { // load the set into the composer
     const path = s.dataset.p.split(",").map(Number), r = path.length > 1 ? rows[path[0]].items[path[1]] : rows[path[0]];
     if (editPath + "" === path + "") { editPath = null; return renderBuilder(); } // tap again to deselect
-    editPath = path; Object.assign(comp, { reps: r.reps, dist: r.dist }, splitLabel(r.label)); return renderBuilder();
+    editPath = path; Object.assign(comp, { reps: r.reps, dist: r.dist }, splitLabel(r.label)); comp.mix = comp.stroke.includes("/"); return renderBuilder();
   }
   if (h) { // new sets go at the end of this section
     const i = +h.dataset.h; let k = i + 1; while (k < rows.length && !rows[k].heading) k++;
