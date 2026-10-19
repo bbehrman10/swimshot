@@ -291,7 +291,7 @@
         </div>
         <textarea hidden name="sets" aria-label="Workout, one set per line" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off"
           placeholder="Warmup&#10;400 swim&#10;Main&#10;8x100 free @1:30&#10;Cooldown&#10;200 easy"></textarea>
-        <div class="ins" hidden aria-label="Insert"><button type="button" data-ins="x" class=k aria-label="Insert x">×</button><button type="button" data-ins="@" class=k aria-label="Insert @">@</button><button type="button" data-ins="-" class=k aria-label="Insert -">–</button><button type="button" data-ins="free" aria-label="Insert free">free</button><button type="button" data-ins="back" aria-label="Insert back">back</button><button type="button" data-ins="breast" aria-label="Insert breast">breast</button><button type="button" data-ins="fly" aria-label="Insert fly">fly</button><button type="button" data-ins="IM" aria-label="Insert IM">IM</button><button type="button" data-ins="kick" aria-label="Insert kick">kick</button><button type="button" data-ins="pull" aria-label="Insert pull">pull</button><button type="button" data-ins="drill" aria-label="Insert drill">drill</button><button type="button" data-ins="easy" aria-label="Insert easy">easy</button><button type="button" data-ins="Warmup" aria-label="Insert Warmup">Warmup</button><button type="button" data-ins="Main" aria-label="Insert Main">Main</button><button type="button" data-ins="Cooldown" aria-label="Insert Cooldown">Cooldown</button></div>
+        <div class="ins" hidden aria-label="Insert"><button type="button" data-ins="x" class=k aria-label="Insert x">×</button><button type="button" data-ins="@" class=k aria-label="Insert @">@</button><button type="button" data-ins="-" class=k aria-label="Insert -">–</button><button type="button" data-ins="FR" aria-label="Insert FR">FR</button><button type="button" data-ins="BK" aria-label="Insert BK">BK</button><button type="button" data-ins="BR" aria-label="Insert BR">BR</button><button type="button" data-ins="FL" aria-label="Insert FL">FL</button><button type="button" data-ins="IM" aria-label="Insert IM">IM</button><button type="button" data-ins="kick" aria-label="Insert kick">kick</button><button type="button" data-ins="pull" aria-label="Insert pull">pull</button><button type="button" data-ins="drill" aria-label="Insert drill">drill</button><button type="button" data-ins="easy" aria-label="Insert easy">easy</button><button type="button" data-ins="Warmup" aria-label="Insert Warmup">Warmup</button><button type="button" data-ins="Main" aria-label="Insert Main">Main</button><button type="button" data-ins="Cooldown" aria-label="Insert Cooldown">Cooldown</button></div>
       </div>
     </div></div>
   </section>
@@ -1523,22 +1523,26 @@ function summarize() {
 }
 
 // ---- builder: tap to build sets. The text stays the source of truth: parse -> edit rows -> serialize. ----
-const STROKES = ["free", "back", "breast", "fly", "IM", "kick", "pull", "drill", "choice"];
+// What the builder writes. Swimmer shorthand for the four strokes; kick/pull/drill/choice stay words.
+const STROKES = ["FR", "BK", "BR", "FL", "IM", "kick", "pull", "drill", "choice"];
+const STROKE_ALIASES = { free: "FR", freestyle: "FR", fr: "FR", back: "BK", backstroke: "BK", bk: "BK", breast: "BR", breaststroke: "BR", br: "BR",
+  fly: "FL", butterfly: "FL", fl: "FL", im: "IM", kick: "kick", k: "kick", pull: "pull", p: "pull", drill: "drill", dr: "drill", choice: "choice", ch: "choice" };
 const EFFORTS = ["easy", "medium", "fast", "all out"];
 const CHIPS = { reps: [1, 2, 3, 4, 5, 6, 8, 10, "…"], dist: [25, 50, 75, 100, 150, 200, 300, 400, 500, 800, 1000, "…"], stroke: STROKES, effort: EFFORTS };
-const comp = { reps: 1, dist: 100, stroke: "free", effort: "", extra: "" };
+const comp = { reps: 1, dist: 100, stroke: "FR", effort: "", extra: "" };
 let cursor = null;   // {g: round index | null, k: insert index}; null = end of the workout
 let editPath = null; // [i] or [i, j] of the set loaded into the composer
+let quickSeed = false; // workout is just the "I swam today" distance: the first built set replaces it
 const SECTIONS = ["Warmup", "Pre-set", "Main", "Kick", "Pull", "Cooldown", "Other…"];
 
 const rowsNow = () => parseSets(f.sets.value).rows;
-function commit(rows) { f.sets.value = serializeSets(rows); changed(); renderBuilder(); }
+function commit(rows) { quickSeed = false; f.sets.value = serializeSets(rows); changed(); renderBuilder(); }
 const compLabel = () => [comp.stroke, comp.effort, comp.extra].filter(Boolean).join(" ");
 const compSet = () => ({ reps: comp.reps, dist: comp.dist, label: compLabel() });
 function splitLabel(label = "") { // "Free fast @1:30" -> { stroke: "free", effort: "fast", extra: "@1:30" }
   let rest = label, stroke = "", effort = "";
   for (const e of EFFORTS) { const m = rest.match(new RegExp(`\\b${e}\\b`, "i")); if (m) { effort = e; rest = rest.replace(m[0], ""); break; } }
-  const first = rest.trim().split(/\s+/)[0] || "", s = STROKES.find(x => x.toLowerCase() === first.toLowerCase());
+  const first = rest.trim().split(/\s+/)[0] || "", s = STROKE_ALIASES[first.toLowerCase()];
   if (s) { stroke = s; rest = rest.trim().slice(first.length); }
   return { stroke, effort, extra: rest.trim().replace(/\s+/g, " ") };
 }
@@ -1595,6 +1599,7 @@ $("cAddBtn").onclick = () => {
     if (j == null) rows[i] = compSet(); else rows[i].items[j] = compSet();
     editPath = null; return commit(rows);
   }
+  if (quickSeed) { rows.length = 0; cursor = null; }
   const c = where(rows), s = compSet();
   if (c.g != null) rows[c.g].items.splice(c.k, 0, s); else rows.splice(c.k, 0, s);
   if (cursor) cursor = { g: c.g, k: c.k + 1 }; // keep adding after what you just added
@@ -1607,7 +1612,8 @@ $("cDel").onclick = () => {
 };
 $("cBelow").onclick = () => { const [i, j] = editPath; cursor = j == null ? { g: null, k: i + 1 } : { g: i, k: j + 1 }; editPath = null; $("cAddBtn").click(); };
 $("addRound").onclick = () => {
-  const rows = rowsNow(), c = where(rows), k = c.g != null ? c.g + 1 : c.k; // never nest rounds
+  const rows = rowsNow(); if (quickSeed) { rows.length = 0; cursor = null; }
+  const c = where(rows), k = c.g != null ? c.g + 1 : c.k; // never nest rounds
   rows.splice(k, 0, { group: true, reps: 3, label: "", dist: 0, items: [] });
   cursor = { g: k, k: 0 }; editPath = null; commit(rows);
 };
@@ -1618,7 +1624,8 @@ $("addSection").onclick = () => {
 $("secChips").addEventListener("click", e => {
   let name = e.target.dataset.sec; if (!name) return;
   if (name === "Other…") { name = prompt("Section name?", ""); if (!name?.trim()) return; name = name.trim(); }
-  const rows = rowsNow(), c = where(rows), k = c.g != null ? c.g + 1 : c.k;
+  const rows = rowsNow(); if (quickSeed) { rows.length = 0; cursor = null; }
+  const c = where(rows), k = c.g != null ? c.g + 1 : c.k;
   rows.splice(k, 0, { heading: name });
   cursor = k + 1 >= rows.length ? null : { g: null, k: k + 1 }; editPath = null;
   $("secChips").hidden = true; commit(rows);
@@ -1672,7 +1679,10 @@ const colonize = el => el.addEventListener("input", () => {
   el.value = d.length <= 2 ? d : d.length <= 4 ? `${d.slice(0, -2)}:${d.slice(-2)}` : `${d.slice(0, -4)}:${d.slice(-4, -2)}:${d.slice(-2)}`;
 });
 colonize(f.time); colonize($("qTime"));
-f.addEventListener("input", e => { if (e.target.name !== "photo" && !e.target.closest("#adjust, #quickSheet")) changed(); });
+f.addEventListener("input", e => {
+  if (e.target.name === "sets") quickSeed = false;
+  if (e.target.name !== "photo" && !e.target.closest("#adjust, #quickSheet")) changed();
+});
 
 // Keep the sheet above the iPhone keyboard: size the app to the visible viewport.
 if (window.visualViewport) {
@@ -1960,12 +1970,12 @@ $("newBtn").onclick = () => {
 $("qMake").onclick = () => {
   const dist = parseInt($("qDist").value.replace(/\D/g, ""), 10);
   if (!dist) { $("qDist").focus(); $("qDist").animate([{ transform: "translateX(-8px)" }, { transform: "translateX(8px)" }, { transform: "none" }], 240); return; }
-  freshWorkout(`${dist} swim`, $("qTime").value);
+  freshWorkout(`${dist} swim`, $("qTime").value); quickSeed = true;
   $("quickSheet").close(); showHome(false); openSheet(false);
 };
 $("qSets").onclick = () => {
   const dist = parseInt($("qDist").value.replace(/\D/g, ""), 10);
-  freshWorkout(dist ? `${dist} swim\n` : "", $("qTime").value);
+  freshWorkout("", $("qTime").value);
   $("quickSheet").close(); showHome(false); openSheet(true);
 };
 $("continueBtn").onclick = () => showHome(false);
