@@ -273,6 +273,7 @@
         <input class="title" name="heading" aria-label="Title" autocomplete="off" enterkeyhint="next">
         <div class="meta">
           <label class="pill"><input name="date" type="date" aria-label="Date"></label>
+          <input type="hidden" name="moving">
           <label class="pill">Time <input name="time" placeholder="48:30" inputmode="numeric" autocomplete="off" aria-label="Time, like 48:30"></label>
           <label class="pill"><select name="unit" aria-label="Units"><option value="yd">yards</option><option value="m">meters</option></select></label>
           <button type="button" class="pill icon" id="helpBtn" aria-label="How to write a workout">?</button>
@@ -417,6 +418,8 @@ let ctx = cv.getContext("2d"); // swapped to the Adjust canvas while adjusting
 const $ = id => document.getElementById(id);
 const SIZES = { story: [1080, 1920], post: [1080, 1350], square: [1080, 1080] };
 const M_TO_YD = 1.0936133;
+// Pace uses moving time when known (FORM imports set it); the card's Time still shows total time.
+const paceSecs = secs => +document.querySelector("[name=moving]")?.value || secs;
 const STROKE_COLORS = { freestyle: "#5ad1ff", backstroke: "#7c8cff", butterfly: "#ff7ab6", breaststroke: "#4ee0a0", drill: "#ffd166", openwater: "#f4a261" };
 let photo = null, form = null; // form = {me, stats} from /api/form (only when a local bridge provides it)
 const cur = { layout: "full", period: "year" }; // what the card functions draw
@@ -538,7 +541,7 @@ function drawWorkout(W, H, accent, unit) {
   });
   part("mark", M, H - M, () => { footer(W, H, M); return [M - 10, H - M - 62, W - 2 * M + 20, 90]; });
   let y = H - M - 90;
-  const stats = [secs && { label: "Time", value: fmtTime(secs) }, secs && total && { label: `Pace /100${unit}`, value: pacePer100(secs, total) }].filter(Boolean);
+  const stats = [secs && { label: "Time", value: fmtTime(secs) }, secs && total && { label: `Pace /100${unit}`, value: pacePer100(paceSecs(secs), total) }].filter(Boolean);
   if (stats.length) { const sy = y; part("stats", M, sy, () => { statRow(stats, M, sy, W - 2 * M); return [M - 10, sy - 104, W - 2 * M + 20, 124]; }); y -= 150; }
   const big = cur.layout === "minimal" ? 260 : H < 1500 ? 160 : 210, by = y;
   part("big", M, by, () => { bigDistance(total, unit, M, by, big, accent, W - 2 * M); return [M - 10, by - big * 0.78, W - 2 * M + 20, big * 0.9]; });
@@ -664,7 +667,7 @@ function drawPoster(W, H, accent, unit, { total, secs, date }) {
   txt(date.toUpperCase(), cx, mid - 300, 30, { weight: 600, color: accent, align: "center", spacing: 6 });
   bfont(66); btxt(clip(f.heading.value.toUpperCase(), W - 160), cx, mid - 210, 66, { align: "center" });
   bigDistance(total, unit, cx, mid + 60, 300, accent, W - 120, true);
-  const line = [secs && fmtTime(secs), secs && total && `${pacePer100(secs, total)} /100${unit}`].filter(Boolean).join("   ·   ");
+  const line = [secs && fmtTime(secs), secs && total && `${pacePer100(paceSecs(secs), total)} /100${unit}`].filter(Boolean).join("   ·   ");
   if (line) txt(line, cx, mid + 170, 48, { weight: 600, align: "center" });
   wordmark(cx, H - 80, "center");
 }
@@ -732,7 +735,7 @@ function drawWhiteboard(W, H, unit, { rows, total, secs, date }) {
   ft(tot, tx, y, size * 1.05, RED, MK);
   ctx.strokeStyle = RED; ctx.lineWidth = 5; ctx.beginPath(); // scribbled circle
   ctx.ellipse(tx + tw / 2, y - size * 0.35, tw / 2 + 30, size * 0.85, -0.04, 0.2, Math.PI * 2.1); ctx.stroke();
-  if (secs) ft(`${fmtTime(secs)}${total ? `  ·  ${pacePer100(secs, total)}/100` : ""}`, L, y + size * 1.4, size * 0.8, INK, MK);
+  if (secs) ft(`${fmtTime(secs)}${total ? `  ·  ${pacePer100(paceSecs(secs), total)}/100` : ""}`, L, y + size * 1.4, size * 0.8, INK, MK);
   btxt("SWIMSHOT", R, by + bh - 46, 26, { color: INK, align: "right" });
   ctx.restore();
 }
@@ -781,7 +784,7 @@ function drawScoreboard(W, H, unit, { rows, total, secs, date }) {
   if (secs) {
     glow(RED); ft("TIME", L, y, size, RED, VT); glow(AMB); ft(fmtTime(secs), R, y, size * 1.3, AMB, VT, { align: "right" });
     y += size * 1.2;
-    if (total) { glow(RED); ft(`PACE/100`, L, y, size, RED, VT); glow(AMB); ft(pacePer100(secs, total), R, y, size * 1.3, AMB, VT, { align: "right" }); }
+    if (total) { glow(RED); ft(`PACE/100`, L, y, size, RED, VT); glow(AMB); ft(pacePer100(paceSecs(secs), total), R, y, size * 1.3, AMB, VT, { align: "right" }); }
   }
   ctx.shadowColor = "transparent";
   ctx.fillStyle = "rgba(5,5,5,.85)"; // LED dot grid over the panel
@@ -842,7 +845,7 @@ function drawFacts(W, H, unit, { rows, total, secs, date }) {
   if (secs) {
     y += 52 * s; ft("Time", L, y, 32 * s, ink, I, { weight: 800 }); ft(fmtTime(secs), R, y, 32 * s, ink, I, { weight: 800, align: "right" });
     y += 14 * s; rule(y, 1.5 * s); y += 46 * s;
-    ft(`Pace per 100${unit}`, L, y, 32 * s, ink, I, { weight: 800 }); ft(pacePer100(secs, total) || "—", R, y, 32 * s, ink, I, { weight: 800, align: "right" });
+    ft(`Pace per 100${unit}`, L, y, 32 * s, ink, I, { weight: 800 }); ft(pacePer100(paceSecs(secs), total) || "—", R, y, 32 * s, ink, I, { weight: 800, align: "right" });
     y += 18 * s; rule(y, 6 * s);
   }
   y += 40 * s;
@@ -909,7 +912,7 @@ function drawClock(W, H, accent, unit, { rows, total, secs, date }) {
   let y = cy + R + 165;
   bigDistance(total, unit, cx, y, 150, accent, W - 2 * M, true);
   y += 62;
-  const line = [secs && fmtTime(secs), pace && `${pacePer100(secs, total)} /100${unit} pace`].filter(Boolean).join("   ·   ");
+  const line = [secs && fmtTime(secs), pace && `${pacePer100(paceSecs(secs), total)} /100${unit} pace`].filter(Boolean).join("   ·   ");
   if (line) txt(line, cx, y, 38, { weight: 600, align: "center" });
   footer(W, H, M);
   if (H - M - 110 - (y + 40) > 120) drawList(rows, M, y + 40, W - 2 * M, H - M - 110, accent);
@@ -948,7 +951,7 @@ function drawBoarding(W, H, accent, unit, { rows, total, secs, date }) {
   y += 215 * s;
   const fields = [["PASSENGER", f.heading.value], ["FLIGHT", `SWM${Math.round(total)}`], ["DATE", shortDate(date) || "Today"], ["GATE", "LANE 4"],
     ["SEAT", "MIDDLE"], ["BOARDING", (sections(rows)[0]?.name || "WARMUP").toUpperCase()], ["DURATION", secs ? fmtTime(secs) : "—"],
-    ["PACE", secs && total ? `${pacePer100(secs, total)}/100` : "—"]];
+    ["PACE", secs && total ? `${pacePer100(paceSecs(secs), total)}/100` : "—"]];
   const colW = (R - L) / 4;
   fields.forEach(([k, v], i) => {
     const fx = L + (i % 4) * colW, fy = y + Math.floor(i / 4) * 120 * s;
@@ -1085,7 +1088,7 @@ function drawHeats(W, H, accent, unit, { rows, total, secs, date }) {
     lines.push([""]);
   });
   lines.push(["-"], ["lr", "Total", `${fmtNum(total)} ${unit}`, true]);
-  if (secs) lines.push(["lr", "Time", fmtTime(secs)], ["lr", "Pace/100", pacePer100(secs, total)]);
+  if (secs) lines.push(["lr", "Time", fmtTime(secs)], ["lr", "Pace/100", pacePer100(paceSecs(secs), total)]);
   const px = 50, pw = W - 100, MONO = '"JetBrains Mono", ui-monospace, monospace', ink = "#1b1b1b";
   let size = 32;
   while (size > 18 && lines.length * size * 1.45 + 120 > H - 100) size -= 1;
@@ -1138,7 +1141,7 @@ function drawNews(W, H, accent, unit, { rows, total, secs, date }) {
   while (head.length > 3 && hs > 50) { hs -= 6; ctx.font = `900 ${hs}px ${SERIF}`; head = wrap(`LOCAL SWIMMER ${verb} ${fmtNum(total)} ${unitWord(unit).toUpperCase()}`, CW); }
   y += hs + 20; ctx.textAlign = "center";
   head.forEach(l => { ctx.fillText(l, W / 2, y); y += hs * 1.02; });
-  const pace = secs && total ? pacePer100(secs, total) : "";
+  const pace = secs && total ? pacePer100(paceSecs(secs), total) : "";
   ctx.font = `italic 400 36px ${SERIF}`;
   const sub = wrap(secs ? `Finishes in ${fmtTime(secs)} at a ${pace} pace; witnesses call main set “${quote}”` : `Witnesses call main set “${quote}”`, CW - 60);
   y += 6; sub.forEach(l => { ctx.fillText(l, W / 2, y); y += 46; });
@@ -1176,7 +1179,7 @@ function drawNews(W, H, accent, unit, { rows, total, secs, date }) {
     const by = boxTop + (bottom - boxTop - boxH) / 2;
     ctx.fillRect(M, by, CW, 4); ctx.fillRect(M, by + boxH, CW, 4);
     ctx.font = `700 24px ${BODY}`; ctx.textAlign = "center"; ctx.fillText("BY THE NUMBERS", W / 2, by + 50);
-    const stats = [[fmtNum(total), unitWord(unit)], ...(secs ? [[fmtTime(secs), "on the clock"], [pacePer100(secs, total), "per 100"]] : [])];
+    const stats = [[fmtNum(total), unitWord(unit)], ...(secs ? [[fmtTime(secs), "on the clock"], [pacePer100(paceSecs(secs), total), "per 100"]] : [])];
     stats.forEach(([v, k], i) => {
       const x = M + CW * (i + 0.5) / stats.length;
       ctx.font = `900 64px ${SERIF}`; ctx.fillText(v, x, by + 140);
@@ -1200,7 +1203,7 @@ function drawSticker(W, H, accent, unit, { total, secs, date }) {
   if (secs) {
     txt(fmtTime(secs), L, py + 262, 44, { color: "#fff" });
     font(44); const tw = ctx.measureText(fmtTime(secs)).width;
-    txt(`${pacePer100(secs, total)} /100${unit}`, L + tw + 40, py + 262, 44, { weight: 600, color: "rgba(255,255,255,.75)" });
+    txt(`${pacePer100(paceSecs(secs), total)} /100${unit}`, L + tw + 40, py + 262, 44, { weight: 600, color: "rgba(255,255,255,.75)" });
   }
   btxt("SWIMSHOT", px + pw - 44, py + ph - 30, 20, { color: "rgba(243,235,221,.55)", align: "right" });
 }
@@ -1314,7 +1317,7 @@ function drawLaneLine(W, H, accent, unit, { rows, total, secs, date }) {
   }
   const y = H - M - 160;
   bigDistance(total, unit, M, y - 30, 150, accent, W - 2 * M);
-  if (secs) txt(`${fmtTime(secs)}  ·  ${pacePer100(secs, total)} /100${unit}`, M, y + 36, 36, { weight: 600 });
+  if (secs) txt(`${fmtTime(secs)}  ·  ${pacePer100(paceSecs(secs), total)} /100${unit}`, M, y + 36, 36, { weight: 600 });
   footer(W, H, M);
 }
 
@@ -1330,7 +1333,7 @@ function drawReceipt(W, H, accent, unit, { rows, total, secs, date }) {
   }
   lines.push(["-"], ["lr", "TOTAL", `${fmtNum(total)} ${unit}`, true]);
   if (secs) lines.push(["lr", "TIME", fmtTime(secs)]);
-  if (secs && total) lines.push(["lr", `PACE /100${unit}`, pacePer100(secs, total)]);
+  if (secs && total) lines.push(["lr", `PACE /100${unit}`, pacePer100(paceSecs(secs), total)]);
   lines.push(["-"], ["c", "THANK YOU FOR SWIMMING"], ["bar"]);
 
   const pw = W * 0.8, px = (W - pw) / 2, pad = 56;
@@ -1540,7 +1543,7 @@ function summarize() {
   const n = rows.filter(r => !r.heading).length;
   $("sumTotal").textContent = total ? `${fmtNum(total)} ${unit}` : "New workout";
   $("sumMeta").textContent = total
-    ? [`${n} set${n === 1 ? "" : "s"}`, secs && fmtTime(secs), secs && `${pacePer100(secs, total)}/100`].filter(Boolean).join(" · ")
+    ? [`${n} set${n === 1 ? "" : "s"}`, secs && fmtTime(secs), secs && `${pacePer100(paceSecs(secs), total)}/100`].filter(Boolean).join(" · ")
     : "Tap to write your sets";
   return total;
 }
@@ -1791,6 +1794,7 @@ const colonize = el => el.addEventListener("input", () => {
   el.value = d.length <= 2 ? d : d.length <= 4 ? `${d.slice(0, -2)}:${d.slice(-2)}` : `${d.slice(0, -4)}:${d.slice(-4, -2)}:${d.slice(-2)}`;
 });
 colonize(f.time); colonize($("qTime"));
+f.time.addEventListener("input", () => { f.moving.value = ""; });
 f.addEventListener("input", e => {
   if (e.target.name === "sets") quickSeed = false;
   if (e.target.name !== "photo" && !e.target.closest("#adjust, #quickSheet")) changed();
@@ -2027,7 +2031,7 @@ $("carousel").addEventListener("click", e => { if (e.target.dataset.i == idx) sh
 if (!canShareFiles) $("save").querySelector("span").textContent = "Save";
 
 // ---- persisted inputs (convenience only; page works without storage) ----
-const KEEP = ["heading", "time", "sets", "unit", "size", "accent", "sticker", "dim"];
+const KEEP = ["heading", "time", "moving", "sets", "unit", "size", "accent", "sticker", "dim"];
 function persist() { try {
   localStorage.setItem("swimshot", JSON.stringify({ idx, ovl, parts, ...Object.fromEntries(KEEP.map(k => [k, f[k].type === "checkbox" ? f[k].checked : f[k].value])) }));
 } catch {} }
@@ -2063,7 +2067,7 @@ $("swims").addEventListener("click", async e => {
   try {
     const s = await fetch(`/api/swims/${encodeURIComponent(b.dataset.id)}${$("flyFix").checked ? "?fly=1" : ""}`).then(r => r.ok ? r.json() : Promise.reject());
     f.heading.value = s.title; f.unit.value = s.unit; f.date.value = s.date;
-    f.time.value = fmtTime(s.seconds); f.sets.value = s.sets;
+    f.time.value = fmtTime(s.seconds); f.moving.value = s.moving || ""; f.sets.value = s.sets;
     quickSeed = false; cursor = editPath = null; changed();
     $("formSheet").close(); showHome(false); openSheet(true);
   } catch { alert("Couldn't load that swim from FORM."); }
@@ -2093,7 +2097,7 @@ function showHome(show = true) {
 }
 const timeOfDayTitle = () => { const hr = new Date().getHours(); return `${hr < 11 ? "Morning" : hr < 15 ? "Lunch" : hr < 21 ? "Evening" : "Night"} Swim`; };
 function freshWorkout(sets = "", time = "") {
-  f.heading.value = timeOfDayTitle(); f.sets.value = sets; f.time.value = time;
+  f.heading.value = timeOfDayTitle(); f.sets.value = sets; f.time.value = time; f.moving.value = "";
   f.date.valueAsDate = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4);
   changed();
 }
