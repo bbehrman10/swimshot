@@ -98,7 +98,14 @@
   .modes { margin:6px 16px 2px; }
   .modes span { padding:7px 4px; font-size:14px; }
   .build { flex:1; min-height:0; display:flex; flex-direction:column; }
-  .blist { flex:1; min-height:0; overflow-y:auto; list-style:none; margin:0; padding:6px 12px 10px; }
+  .blist { position:relative; flex:1; min-height:0; overflow-y:auto; list-style:none; margin:0; padding:6px 12px 10px; }
+  .blist .grip { flex:none; width:16px; min-width:0; align-self:stretch; margin:-6px 0 -6px -4px; cursor:grab; touch-action:none;
+          background:radial-gradient(circle, var(--muted) 1.4px, transparent 1.6px) center/7px 7px; opacity:.55; }
+  .blist .bh .grip { margin:-10px 0 -4px -4px; }
+  .dragging { opacity:.35; }
+  .dropline { position:absolute; left:12px; right:12px; height:3px; border-radius:2px; background:var(--accent);
+              box-shadow:0 0 10px var(--accent); pointer-events:none; z-index:2; }
+  body.dragmode, body.dragmode * { cursor:grabbing !important; user-select:none; -webkit-user-select:none; }
   .blist li { list-style:none; }
   .bh, .bs, .bg > .gh { display:flex; align-items:center; gap:10px; border-radius:12px; cursor:pointer; }
   .bh { padding:12px 6px 4px; font:900 13px/1 var(--brand); font-stretch:125%; letter-spacing:.12em; color:var(--accent); text-transform:uppercase; }
@@ -1568,19 +1575,19 @@ function where(rows) { // resolved insertion point
   return cursor || { g: null, k: rows.length };
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const setHTML = (r, path) => `<li class="bs${editPath + "" === path + "" ? " sel" : ""}" data-p="${path}"><b>${r.reps > 1 ? r.reps + "×" : ""}${r.dist}</b><span>${esc(r.label)}</span><i>${fmtNum(r.reps * r.dist)}</i></li>`;
+const setHTML = (r, path) => `<li class="bs${editPath + "" === path + "" ? " sel" : ""}" data-p="${path}"><span class="grip" aria-hidden="true"></span><b>${r.reps > 1 ? r.reps + "×" : ""}${r.dist}</b><span>${esc(r.label)}</span><i>${fmtNum(r.reps * r.dist)}</i></li>`;
 
 function renderBuilder() {
   const rows = rowsNow(), c = where(rows), CUR = '<li class="cursor" aria-label="New sets go here"></li>';
   let html = "";
   rows.forEach((r, i) => {
     if (c.g == null && c.k === i) html += CUR;
-    if (r.heading) html += `<li class="bh" data-h="${i}">${esc(r.heading)}<button type="button" class="xbtn" data-delh="${i}" aria-label="Remove ${esc(r.heading)}">×</button></li>`;
+    if (r.heading) html += `<li class="bh" data-h="${i}"><span class="grip" aria-hidden="true"></span>${esc(r.heading)}<button type="button" class="xbtn" data-delh="${i}" aria-label="Remove ${esc(r.heading)}">×</button></li>`;
     else if (r.group) {
       let inner = "";
       r.items.forEach((it, j) => { if (c.g === i && c.k === j) inner += CUR; if (!it.heading) inner += setHTML(it, [i, j]); });
       if (c.g === i && c.k >= r.items.length) inner += CUR;
-      html += `<li class="bg"><div class="gh" data-g="${i}"><button type="button" class="step" data-rd="${i}" aria-label="Fewer rounds">−</button>
+      html += `<li class="bg" data-bg="${i}"><div class="gh" data-g="${i}"><span class="grip" aria-hidden="true"></span><button type="button" class="step" data-rd="${i}" aria-label="Fewer rounds">−</button>
         <span class="l">${r.reps}× round${r.label ? " · " + esc(r.label) : ""}</span><i>${fmtNum(r.reps * r.dist)}</i>
         <button type="button" class="step" data-ru="${i}" aria-label="More rounds">+</button><button type="button" class="xbtn" data-delg="${i}" aria-label="Remove round">×</button></div>
         <ol>${inner || '<li class="bempty" style="padding:8px">Add sets to this round ↓</li>'}</ol></li>`;
@@ -1652,7 +1659,90 @@ $("secChips").addEventListener("click", e => {
   cursor = k + 1 >= rows.length ? null : { g: null, k: k + 1 }; editPath = null;
   $("secChips").hidden = true; commit(rows);
 });
+// ---- drag to reorder: press a row's grip, drag, drop on the glowing line ----
+// Sets can go anywhere (into/out of rounds); sections and rounds move between top-level rows only.
+let reorder = null; // {path, kind, el, line}
+function dropTarget(y) { // pointer y -> {g, k} slot, or null
+  const list = $("blist"), d = reorder, top = d.kind !== "set"; // headings/rounds stay top-level
+  const rows = [...list.querySelectorAll(".bh, .bs, .bg")].filter(el => !d.el.contains(el) && el !== d.el && !(el.classList.contains("bs") && el.closest(".bg") && el.closest(".bg") === d.el));
+  for (const el of rows) {
+    const r = (el.classList.contains("bg") ? el.querySelector(".gh") : el).getBoundingClientRect();
+    const inGroup = el.classList.contains("bs") && el.closest(".bg");
+    if (el.classList.contains("bg")) { // a round: above its header = before it; inside = into it (sets only)
+      const all = el.getBoundingClientRect(), gi = +el.dataset.bg;
+      if (y < r.top + r.height / 2) return { g: null, k: gi, el, before: true };
+      if (!top && y < all.bottom - 6) {
+        const items = [...el.querySelectorAll(".bs")].filter(x => x !== d.el);
+        for (const it of items) { const b = it.getBoundingClientRect(); if (y < b.top + b.height / 2) return { g: gi, k: +it.dataset.p.split(",")[1], el: it, before: true }; }
+        const last = items.at(-1);
+        return { g: gi, k: last ? +last.dataset.p.split(",")[1] + 1 : 0, el: last || el.querySelector(".gh"), before: false };
+      }
+      continue;
+    }
+    if (inGroup) continue; // handled via its round above
+    if (y < r.top + r.height / 2) {
+      const i = el.dataset.h != null ? +el.dataset.h : +el.dataset.p;
+      return { g: null, k: i, el, before: true };
+    }
+  }
+  const lastTop = [...list.children].filter(el => el.matches(".bh, .bs, .bg") && el !== d.el).at(-1);
+  return { g: null, k: rowsNow().length, el: lastTop, before: false };
+}
+function showLine(t) {
+  const list = $("blist"), lr = list.getBoundingClientRect();
+  if (!t?.el) { reorder.line.hidden = true; return; }
+  const r = t.el.getBoundingClientRect(), y = (t.before ? r.top - 3 : r.bottom + 2) - lr.top + list.scrollTop;
+  Object.assign(reorder.line.style, { top: y + "px", left: (t.g != null ? 34 : 12) + "px" }); reorder.line.hidden = false;
+}
+let scrollTimer;
+$("blist").addEventListener("pointerdown", e => {
+  const g = e.target.closest(".grip"); if (!g) return;
+  e.preventDefault();
+  const row = g.closest(".bs, .bh, .gh"), el = row.classList.contains("gh") ? row.closest(".bg") : row;
+  const kind = row.classList.contains("bs") ? "set" : row.classList.contains("bh") ? "heading" : "round";
+  const path = kind === "set" ? row.dataset.p.split(",").map(Number) : [+(row.dataset.h ?? row.dataset.g)];
+  const line = Object.assign(document.createElement("div"), { className: "dropline", hidden: true });
+  $("blist").append(line);
+  reorder = { path, kind, el, line, target: null, y: e.clientY };
+  el.classList.add("dragging"); document.body.classList.add("dragmode");
+  try { g.setPointerCapture(e.pointerId); } catch {}
+  clearInterval(scrollTimer);
+  scrollTimer = setInterval(() => { // auto-scroll near the list edges
+    if (!reorder) return;
+    const r = $("blist").getBoundingClientRect(), edge = 48;
+    const v = reorder.y < r.top + edge ? -8 : reorder.y > r.bottom - edge ? 8 : 0;
+    if (v) { $("blist").scrollTop += v; reorder.target = dropTarget(reorder.y); showLine(reorder.target); }
+  }, 16);
+});
+$("blist").addEventListener("pointermove", e => {
+  if (!reorder) return;
+  reorder.y = e.clientY; reorder.target = dropTarget(e.clientY); showLine(reorder.target);
+});
+function endDrag(commitIt) {
+  if (!reorder) return;
+  clearInterval(scrollTimer);
+  const { path, target } = reorder;
+  reorder.el.classList.remove("dragging"); reorder.line.remove(); document.body.classList.remove("dragmode");
+  reorder = null;
+  if (!commitIt || !target) return;
+  const rows = rowsNow();
+  let t = { ...target }, item;
+  if (path.length === 2) { // remove a set from its round
+    const [gi, j] = path; item = rows[gi].items.splice(j, 1)[0];
+    if (t.g === gi && t.k > j) t.k--;
+  } else {
+    const [a] = path; item = rows.splice(a, 1)[0];
+    if (t.g != null && t.g > a) t.g--;
+    if (t.g == null && t.k > a) t.k--;
+  }
+  if (t.g != null && rows[t.g]?.group) rows[t.g].items.splice(t.k, 0, item); else rows.splice(t.g != null ? t.g + 1 : t.k, 0, item);
+  cursor = editPath = null; commit(rows);
+}
+$("blist").addEventListener("pointerup", () => endDrag(true));
+$("blist").addEventListener("pointercancel", () => endDrag(false));
+
 $("blist").addEventListener("click", e => {
+  if (e.target.closest(".grip")) return;
   const rows = rowsNow(), t = e.target;
   if (t.dataset.delh != null) { rows.splice(+t.dataset.delh, 1); cursor = editPath = null; return commit(rows); }
   if (t.dataset.delg != null) { if (rows[+t.dataset.delg].items.length && !confirm("Remove this round and its sets?")) return; rows.splice(+t.dataset.delg, 1); cursor = editPath = null; return commit(rows); }
