@@ -188,6 +188,19 @@
   .rot svg { width:20px; height:20px; }
   .adj-actions .btn { flex:1; justify-content:center; padding:0 10px; }
 
+  /* gallery */
+  .gallery { position:absolute; inset:0; z-index:18; background:var(--bg); display:flex; flex-direction:column; animation:fadein .2s ease; }
+  .galtop { display:flex; align-items:center; gap:10px; padding:calc(14px + var(--safe-t)) 16px 10px; }
+  .galtop b { font:900 20px var(--brand); font-stretch:125%; }
+  .galtop span { flex:1; color:var(--muted); font-size:13px; }
+  .galgrid { flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:16px 12px; padding:6px 16px calc(20px + var(--safe-b)); }
+  .galgrid button { border:0; background:none; padding:0; color:var(--text); text-align:left; }
+  .galgrid img { display:block; width:100%; aspect-ratio:9/16; border-radius:12px; box-shadow:0 10px 24px rgba(0,0,0,.45);
+                 background:linear-gradient(100deg, #121b26 30%, #1b2735 50%, #121b26 70%) 0 0/300% 100%; animation:shimmer 1.2s linear infinite; }
+  .galgrid img.ready { animation:fadein .25s ease; }
+  .galgrid span { display:block; margin-top:7px; font-weight:700; font-size:14px; }
+  .galgrid button:active img { transform:scale(.97); }
+
   /* full-screen card viewer: press-and-hold saves to Photos (works without https) */
   .viewer { position:absolute; inset:0; z-index:20; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center;
             gap:14px; padding:calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b)); animation:fadein .2s ease; }
@@ -319,6 +332,7 @@
       <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>I swam today</button>
     <button type="button" class="btn quiet" id="continueBtn" hidden></button>
     <button type="button" class="btn quiet" id="formBtn" hidden>Import from FORM</button>
+    <button type="button" class="linkish" id="galBtn" style="margin-top:10px">See all card styles</button>
   </section>
 
   <div class="adjust" id="adjust" role="dialog" aria-modal="true" aria-label="Adjust photo" hidden>
@@ -343,6 +357,12 @@
     </div>
   </div>
 
+  <section class="gallery" id="gallery" role="dialog" aria-modal="true" aria-label="Card styles" hidden>
+    <div class="galtop"><b>Card styles</b><span>Tap one to use it</span>
+      <button type="button" class="round" id="galClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="galgrid" id="galGrid"></div>
+  </section>
+
   <div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Your card" hidden>
     <button type="button" class="round x" id="viewClose" aria-label="Close">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
@@ -364,7 +384,7 @@
     </div>
   </div>
   <div class="field"><span>Accent</span><div class="swatches"><label><input type="radio" name="accent" value="#F3EBDD" checked aria-label="Cream"><span style="background:#F3EBDD"></span></label><label><input type="radio" name="accent" value="#5ad1ff" aria-label="Pool blue"><span style="background:#5ad1ff"></span></label><label><input type="radio" name="accent" value="#ffffff" aria-label="White"><span style="background:#ffffff"></span></label><label><input type="radio" name="accent" value="#4ee0a0" aria-label="Green"><span style="background:#4ee0a0"></span></label><label><input type="radio" name="accent" value="#ffd166" aria-label="Yellow"><span style="background:#ffd166"></span></label><label><input type="radio" name="accent" value="#ff7ab6" aria-label="Pink"><span style="background:#ff7ab6"></span></label><label><input type="radio" name="accent" value="#ff7a45" aria-label="Orange"><span style="background:#ff7a45"></span></label></div></div>
-  <div class="field"><button type="button" class="linkish" id="adjustFromStyle">Move &amp; resize text and photo</button>
+  <div class="field"><button type="button" class="linkish" id="galFromStyle" style="margin-right:16px">Browse all styles</button><button type="button" class="linkish" id="adjustFromStyle">Move &amp; resize text and photo</button>
     <button type="button" class="linkish" id="removePhoto" style="margin-left:16px">Remove photo</button></div>
   <div class="field"><label><span class="lbl">Darkness behind text</span><input name="dim" type="range" min="0" max="100" value="80"></label></div>
   <div class="field"><label class="toggle">Transparent sticker <input type="checkbox" name="sticker"></label>
@@ -2079,13 +2099,47 @@ fetch("/api/swims", { method: "HEAD" }).then(r => { formOK = r.status !== 404; $
 const DEMO = { heading: "Morning Swim", time: "1:15:00",
   sets: "Main\n3x\n- 2x200 Free easy\n- 4x100 Free medium\n- 4x50 Free fast\nGrind\n2x\n- 2x50 Free fast\n- 1x100 Free fast\n3x all out\n- 2x50 Fly  \n- 2x50 Free\nCooldown\n300 Pull easy" };
 // Sample cards from a demo workout: swap the inputs in, draw (synchronous), swap back.
+// Draw with the sample workout and default styling, then put your inputs back (drawing is synchronous).
+function withDemo(fn) {
+  const keep = { heading: f.heading.value, time: f.time.value, moving: f.moving.value, sets: f.sets.value, sticker: f.sticker.checked,
+                 size: f.size.value, photo, ovl: { ...ovl }, parts: JSON.stringify(parts) };
+  f.heading.value = DEMO.heading; f.time.value = DEMO.time; f.moving.value = ""; f.sets.value = DEMO.sets; f.sticker.checked = false;
+  f.size.value = "story"; photo = null; Object.assign(ovl, { s: 1, x: 0, y: 0, r: 0 }); for (const k in parts) delete parts[k];
+  try { return fn(); } finally {
+    f.heading.value = keep.heading; f.time.value = keep.time; f.moving.value = keep.moving; f.sets.value = keep.sets; f.sticker.checked = keep.sticker;
+    f.size.value = keep.size; photo = keep.photo; Object.assign(ovl, keep.ovl); Object.assign(parts, JSON.parse(keep.parts));
+  }
+}
 async function renderFan() {
-  const keep = { heading: f.heading.value, time: f.time.value, sets: f.sets.value, sticker: f.sticker.checked, size: f.size.value, photo };
-  f.heading.value = DEMO.heading; f.time.value = DEMO.time; f.sets.value = DEMO.sets; f.sticker.checked = false; f.size.value = "story"; photo = null;
-  const jobs = ["receipt", "whiteboard", "full"].map(layout => drawSlide({ layout }, 0.4));
-  f.heading.value = keep.heading; f.time.value = keep.time; f.sets.value = keep.sets; f.sticker.checked = keep.sticker; f.size.value = keep.size; photo = keep.photo;
+  const jobs = withDemo(() => ["receipt", "whiteboard", "full"].map(layout => drawSlide({ layout }, 0.4)));
   (await Promise.all(jobs)).forEach((b, i) => { const img = $("home").querySelectorAll(".fan img")[i]; URL.revokeObjectURL(img.src); img.src = URL.createObjectURL(b); });
 }
+
+// ---- gallery: every card style, drawn with the sample workout ----
+let galleryDone = false;
+async function openGallery() {
+  $("gallery").hidden = false; $("galClose").focus();
+  if (galleryDone) return;
+  $("galGrid").innerHTML = LOOKS.map(([layout, name], i) => `<button type="button" data-i="${i}" aria-label="Use ${name}"><img alt=""><span>${name}</span></button>`).join("");
+  const imgs = $("galGrid").querySelectorAll("img");
+  for (const [i, [layout]] of LOOKS.entries()) { // one at a time so the screen stays responsive
+    const blob = await withDemo(() => drawSlide({ layout }, 0.32));
+    imgs[i].src = URL.createObjectURL(blob); imgs[i].onload = () => imgs[i].classList.add("ready");
+    await new Promise(r => setTimeout(r, 0));
+  }
+  galleryDone = true;
+}
+const closeGallery = () => { $("gallery").hidden = true; };
+$("galClose").onclick = closeGallery;
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("gallery").hidden) closeGallery(); });
+$("galGrid").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]"); if (!b) return;
+  idx = +b.dataset.i; persist(); closeGallery();
+  if (!summarize()) { $("newBtn").click(); return; } // nothing to show yet: log a swim first, then you land on this look
+  showHome(false); openSheet(false); buildCarousel(); renderAll();
+});
+$("galBtn").onclick = openGallery;
+$("galFromStyle").onclick = () => { $("styleSheet").close(); openGallery(); };
 function showHome(show = true) {
   $("home").classList.toggle("gone", !show);
   $("home").inert = !show; app.querySelectorAll(".stage, .sheet").forEach(el => el.inert = show);
