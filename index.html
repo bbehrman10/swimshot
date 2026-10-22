@@ -27,6 +27,7 @@
 
   /* stage: the card, always visible */
   .stage { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
+  .side { display:flex; gap:8px; width:96px; } .side.right { justify-content:flex-end; } /* equal widths keep the wordmark centered */
   .top { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:calc(10px + var(--safe-t)) 14px 4px; z-index:2; }
   /* editor open: it takes the whole screen; the card shrinks to a live thumbnail in the header */
   .app.editing .stage { display:none; }
@@ -257,14 +258,21 @@
 <div class="app" id="app">
   <section class="stage" aria-label="Your card">
     <div class="top">
+      <div class="side">
       <button type="button" class="round" id="photoBtn" aria-label="Add a photo" title="Photo">
         <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m21 15-4.5-4.5L8 19"/></svg>
       </button>
+      <button type="button" class="round" id="moveBtn" aria-label="Move, resize and rotate the text" title="Move &amp; resize">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
+      </button>
+      </div>
       <input name="photo" type="file" accept="image/*" hidden>
       <div class="look"><button type="button" class="wm" id="homeLogo" aria-label="Swimshot. Back to the title screen.">SWIMSHOT</button><div class="dots" id="dots" aria-hidden="true"></div></div>
+      <div class="side right">
       <button type="button" class="round" id="styleBtn" aria-label="Style" title="Style">
         <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
       </button>
+      </div>
     </div>
     <div class="carousel" id="carousel" tabindex="0" aria-label="Looks. Swipe or use arrow keys."></div>
     <div class="hint" id="hint" hidden><span>Swipe for more looks</span></div>
@@ -1843,6 +1851,7 @@ $("example").onclick = () => {
 };
 // ---- photo: pick, then frame it (drag to move, pinch/scroll/slider to zoom) ----
 $("photoBtn").onclick = () => photo ? openAdjust("photo") : f.photo.click();
+$("moveBtn").onclick = () => openAdjust("text");
 $("adjReplace").onclick = () => f.photo.click();
 $("adjReset").onclick = () => {
   if (adjTarget() === "photo") Object.assign(frame, { zoom: 1, fx: 0.5, fy: 0.5 });
