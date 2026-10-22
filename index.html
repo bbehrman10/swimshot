@@ -1005,24 +1005,28 @@ function drawBoarding(W, H, accent, unit, { rows, total, secs, date }) {
   lbl("TOTAL", R - 260 * s, by + 120 * s); btxt(`${fmtNum(total)} ${unit}`, R - 260 * s, by + 168 * s, 34 * s, { color: ink });
 }
 
-// Coach texts: iMessage thread, dark mode. Older messages scroll off the top like a real chat.
+// Group chat: you post your sets to the team chat, teammates cheer. Older messages scroll off the top like a real chat.
 function drawTexts(W, H, accent, unit, { rows, total, secs }) {
   const SYS = '-apple-system, "SF Pro Text", Inter, system-ui, sans-serif';
-  const replies = ["ok", "😭", "on it", "my arms", "💀", "say less", "why", "🫡", "ok coach"];
-  const msgs = [];
+  const MATES = [["Sam", "#30d158"], ["Jordan", "#ff9f0a"], ["Riley", "#bf5af2"]];
+  const CHEERS = ["nice 👏", "big set", "🔥🔥", "lane 4 was moving today", "respect", "saving this one", "strong 💪", "love that main set"];
+  const seed = Math.round(total / 100), msgs = [];
   sections(rows).forEach((sec, i) => {
     const body = sec.items.map(r => r.group
       ? `${r.reps}x${r.label ? " " + r.label : ""}:\n${r.items.filter(it => !it.heading).map(it => "– " + setText(it)).join("\n")}`
       : setText(r)).join("\n");
-    msgs.push({ me: false, text: (sec.name ? sec.name + ":\n" : "") + body });
-    msgs.push({ me: true, text: replies[(i + Math.round(total / 100)) % replies.length] });
+    msgs.push({ me: true, text: (sec.name ? sec.name + ":\n" : "") + body });
+    const [name, color] = MATES[(i + seed) % MATES.length];
+    msgs.push({ me: false, name, color, text: CHEERS[(i * 3 + seed) % CHEERS.length] });
   });
-  msgs[msgs.length - 1] = { me: true, text: `done ✅ ${fmtNum(total)} ${unit}${secs ? " in " + fmtTime(secs) : ""}` };
-  msgs.push({ me: false, text: total >= 4000 ? "see you tomorrow 😈" : "more tomorrow 😈" });
+  msgs.pop(); // end on your summary, then one last cheer
+  msgs.push({ me: true, text: `done ✅ ${fmtNum(total)} ${unit}${secs ? " in " + fmtTime(secs) : ""}` });
+  const [n2, c2] = MATES[(sections(rows).length + seed) % MATES.length]; // not whoever cheered just before
+  msgs.push({ me: false, name: n2, color: c2, text: "let's go 🙌" });
 
   if (!f.sticker.checked) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
   ctx.shadowColor = "transparent";
-  const top = 250, bottom = H - 170, size = 40, lh = 52, padX = 30, padY = 20, maxW = W * 0.68;
+  const top = 250, bottom = H - 170, size = 40, lh = 52, padX = 30, padY = 20, maxW = W * 0.68, AV = 60, nameH = 34;
   ctx.font = `400 ${size}px ${SYS}`;
   const laid = msgs.map(m => { const lines = wrap(m.text, maxW - 2 * padX); return { ...m, lines, w: Math.max(...lines.map(l => ctx.measureText(l).width)) + 2 * padX, h: lines.length * lh + 2 * padY - (lh - size) }; });
   ctx.save(); ctx.beginPath(); ctx.rect(0, top, W, bottom - top); ctx.clip();
@@ -1030,20 +1034,30 @@ function drawTexts(W, H, accent, unit, { rows, total, secs }) {
   for (let i = laid.length - 1; i >= 0 && y > top - 400; i--) {
     const m = laid[i];
     y -= m.h;
-    const x = m.me ? W - 40 - m.w : 40;
+    const x = m.me ? W - 40 - m.w : 40 + AV + 16;
     ctx.fillStyle = m.me ? "#0a84ff" : "#26262a";
     ctx.beginPath(); ctx.roundRect(x, y, m.w, m.h, 38); ctx.fill();
     ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.font = `400 ${size}px ${SYS}`;
     m.lines.forEach((l, k) => ctx.fillText(l, x + padX, y + padY + size * 0.85 + k * lh));
+    if (!m.me) { // teammate: avatar beside the bubble, name above it
+      ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(40 + AV / 2, y + m.h - AV / 2, AV / 2, 0, Math.PI * 2); ctx.fill();
+      txt(m.name[0], 40 + AV / 2, y + m.h - AV / 2 + 11, 30, { weight: 700, color: "#fff", align: "center" });
+      txt(m.name, x + 16, y - 10, 24, { weight: 400, color: "#8e8e93" });
+      y -= nameH;
+    }
     y -= laid[i - 1] && laid[i - 1].me !== m.me ? 26 : 10;
   }
   ctx.restore();
-  // header: avatar + name, then the input bar
+  // header: stacked group avatars + chat name, then the input bar
   ctx.fillStyle = f.sticker.checked ? "rgba(0,0,0,0)" : "rgba(28,28,30,.96)"; ctx.fillRect(0, 0, W, top - 10);
   txt("‹", 50, 150, 90, { weight: 400, color: "#0a84ff" });
-  ctx.fillStyle = "#8e8e93"; ctx.beginPath(); ctx.arc(W / 2, 110, 56, 0, Math.PI * 2); ctx.fill();
-  txt("C", W / 2, 132, 58, { weight: 600, color: "#fff", align: "center" });
-  txt("Coach ›", W / 2, 212, 30, { weight: 400, color: "#fff", align: "center" });
+  MATES.forEach(([name, color], k) => {
+    const cx = W / 2 + (k - 1) * 46;
+    ctx.fillStyle = "#1c1c1e"; ctx.beginPath(); ctx.arc(cx, 112, 40, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx, 112, 35, 0, Math.PI * 2); ctx.fill();
+    txt(name[0], cx, 124, 32, { weight: 700, color: "#fff", align: "center" });
+  });
+  txt("Swim Squad 🏊 ›", W / 2, 205, 30, { weight: 400, color: "#fff", align: "center" });
   ctx.strokeStyle = "#3a3a3c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(40, H - 130, W - 170, 80, 40); ctx.stroke();
   txt("iMessage", 80, H - 78, 34, { weight: 400, color: "#5f5f64" });
   ctx.fillStyle = "#0a84ff"; ctx.beginPath(); ctx.arc(W - 80, H - 90, 40, 0, Math.PI * 2); ctx.fill();
@@ -1435,7 +1449,7 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 
 
 // ---- looks (carousel slides) ----
-const LOOKS = [["full", "Classic"], ["receipt", "Receipt"], ["texts", "Coach Texts"], ["whiteboard", "Whiteboard"],
+const LOOKS = [["full", "Classic"], ["receipt", "Receipt"], ["texts", "Group Chat"], ["whiteboard", "Whiteboard"],
                ["boarding", "Boarding Pass"], ["clock", "Pace Clock"], ["scoreboard", "Scoreboard"], ["player", "Now Swimming"],
                ["facts", "Workout Facts"], ["heats", "Heat Sheet"], ["news", "Front Page"], ["bars", "Bars"], ["sticker", "Stats Sticker"],
                ["polaroid", "Polaroid"], ["departures", "Departures"], ["lane", "Lane Line"], ["poster", "Poster"], ["minimal", "Minimal"]];
